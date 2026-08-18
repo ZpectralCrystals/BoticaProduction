@@ -4,6 +4,7 @@ import {
   extractClerkProxyPath,
   resolveClerkProxyUrl,
   serializeFormBody,
+  stripProxyBodyFields,
 } from '../lib/clerk-proxy-handler.js'
 
 describe('proxy Clerk', () => {
@@ -42,7 +43,13 @@ describe('proxy Clerk', () => {
     expect(serializeFormBody({
       identifier: 'admin@botica.pe',
       strategy: 'password',
+      clerk_path: 'v1/client/sign_ins',
+      path: 'v1/client/sign_ins',
       optional: null,
     })).toBe('identifier=admin%40botica.pe&strategy=password')
+
+    expect(stripProxyBodyFields({ identifier: 'admin@botica.pe', path: 'interno' })).toEqual({
+      identifier: 'admin@botica.pe',
+    })
   })
 })

@@ -96,7 +96,7 @@ async function readRequestBody(request: IncomingMessage) {
       return Buffer.from(serializeFormBody(parsedBody))
     }
 
-    return Buffer.from(JSON.stringify(parsedBody))
+    return Buffer.from(JSON.stringify(stripProxyBodyFields(parsedBody)))
   }
 
   const chunks: Buffer[] = []
@@ -107,10 +107,11 @@ async function readRequestBody(request: IncomingMessage) {
 }
 
 export function serializeFormBody(body: unknown) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return ''
+  const sanitizedBody = stripProxyBodyFields(body)
+  if (!sanitizedBody || typeof sanitizedBody !== 'object' || Array.isArray(sanitizedBody)) return ''
 
   const params = new URLSearchParams()
-  for (const [name, value] of Object.entries(body)) {
+  for (const [name, value] of Object.entries(sanitizedBody)) {
     if (Array.isArray(value)) {
       for (const item of value) params.append(name, String(item))
     } else if (value !== undefined && value !== null) {
@@ -118,6 +119,12 @@ export function serializeFormBody(body: unknown) {
     }
   }
   return params.toString()
+}
+
+export function stripProxyBodyFields(body: unknown) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body
+  const { clerk_path: _clerkPath, path: _path, ...payload } = body as Record<string, unknown>
+  return payload
 }
 
 export async function handleClerkProxy(
