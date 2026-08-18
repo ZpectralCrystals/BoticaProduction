@@ -231,6 +231,8 @@ npm run test:coverage       # Con cobertura
 | `docs/guides/clinical_guia.md` | Guía del módulo clínico |
 | `docs/guides/kardex_guia.md` | Guía del módulo kardex |
 | `docs/operations/` | Checklists de operación |
+| `docs/reports/STATUS_VERCEL_CONFIG_20260818.md` | Estado despliegue Vercel + pendientes backend |
+| `docs/reports/STATUS_DB_PRODUCTIVA_SUPABASE_20260818_FASE_9_PRECORTE.md` | Precorte Supabase |
 
 ---
 
@@ -247,11 +249,41 @@ npm run test:coverage       # Con cobertura
 - [x] Auditoría de cambios
 - [x] Drizzle ORM instalado
 - [x] Integración Clerk (parcial)
+- [x] Rebranding UI local aplicado sobre versión duplicada
+- [x] Menú lateral colapsable/expandible
+- [x] Inventario con stock, lotes, vencimientos, FEFO y kardex
+- [x] Compras reales con actualización de inventario
+- [x] Ventas con descuento de stock y registro kardex
+- [x] Anulación de ventas con reversa de stock y caja
+- [x] Base local auditada antes de migración cloud
+- [x] Supabase staging migrado y validado
+- [x] Seguridad DB backend-only sin grants públicos a `anon`/`authenticated`
+- [x] Backup Supabase post-migración generado
+- [x] Frontend preparado para Vercel
+- [x] Repo producción publicado en GitHub
 
 ### 🚧 En progreso:
+- [ ] Despliegue backend Fastify en host persistente (Railway/Render/Fly/VPS)
+- [ ] Conectar Vercel frontend con backend público vía `VITE_API_BASE_URL`
+- [ ] Configurar `CORS_ORIGIN` con dominio final de Vercel
+- [ ] Rotar contraseña Supabase y actualizar variables del backend
+- [ ] Cambiar credenciales demo/admin antes de entregar producción
+- [ ] Generar `JWT_SECRET` productivo y guardarlo solo en variables del host
+- [ ] Ejecutar smoke test contra API pública
 - [ ] Migración completa a Drizzle ORM (desde SQL raw)
 - [ ] Integración completa de Clerk
 - [ ] Optimización de formularios (usar FormData)
+
+### 🔜 Siguientes mejoras:
+- [ ] Backups automáticos diarios de Supabase
+- [ ] Monitoreo de healthcheck backend
+- [ ] Logs centralizados de errores API
+- [ ] Dashboard con métricas reales de ventas, stock crítico y vencimientos
+- [ ] Pruebas E2E de flujos críticos: compra, venta, caja, anulación, inventario
+- [ ] Manual de usuario versionado junto al sistema
+- [ ] Política de roles/permisos revisada por perfil real de botica
+- [ ] Validación externa SUNAT para proveedores/clientes
+- [ ] Optimización de bundle frontend con code splitting
 
 ---
 
@@ -261,7 +293,7 @@ npm run test:coverage       # Con cobertura
 |------|------------|
 | Frontend | React 19, Vite 8, TypeScript 6, Tailwind CSS 4 |
 | Backend | Fastify 5, TypeScript, Node.js 20+ |
-| Base de datos | PostgreSQL 15 |
+| Base de datos | PostgreSQL 17 / Supabase |
 | ORM | Drizzle ORM (migración en progreso) |
 | Auth | JWT local + Clerk (migrando) |
 | Testing | Vitest |
