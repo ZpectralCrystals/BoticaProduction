@@ -83,11 +83,41 @@ export function buildClerkProxyHeaders(
 }
 
 async function readRequestBody(request: IncomingMessage) {
+  const parsedBody = (request as IncomingMessage & { body?: unknown }).body
+  if (parsedBody !== undefined) {
+    if (Buffer.isBuffer(parsedBody)) return parsedBody
+    if (typeof parsedBody === 'string') return Buffer.from(parsedBody)
+
+    const contentType = Array.isArray(request.headers['content-type'])
+      ? request.headers['content-type'][0]
+      : request.headers['content-type']
+
+    if (contentType?.startsWith('application/x-www-form-urlencoded')) {
+      return Buffer.from(serializeFormBody(parsedBody))
+    }
+
+    return Buffer.from(JSON.stringify(parsedBody))
+  }
+
   const chunks: Buffer[] = []
   for await (const chunk of request) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
   }
   return chunks.length > 0 ? Buffer.concat(chunks) : undefined
+}
+
+export function serializeFormBody(body: unknown) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return ''
+
+  const params = new URLSearchParams()
+  for (const [name, value] of Object.entries(body)) {
+    if (Array.isArray(value)) {
+      for (const item of value) params.append(name, String(item))
+    } else if (value !== undefined && value !== null) {
+      params.append(name, String(value))
+    }
+  }
+  return params.toString()
 }
 
 export async function handleClerkProxy(

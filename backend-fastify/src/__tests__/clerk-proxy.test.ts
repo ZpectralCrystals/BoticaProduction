@@ -3,6 +3,7 @@ import {
   buildClerkProxyHeaders,
   extractClerkProxyPath,
   resolveClerkProxyUrl,
+  serializeFormBody,
 } from '../lib/clerk-proxy-handler.js'
 
 describe('proxy Clerk', () => {
@@ -35,5 +36,13 @@ describe('proxy Clerk', () => {
     expect(headers.get('clerk-secret-key')).toBe('secreto-servidor')
     expect(headers.get('clerk-proxy-url')).toBe('https://botica-production.vercel.app/__clerk')
     expect(headers.get('x-forwarded-for')).toBe('203.0.113.8, 10.0.0.1')
+  })
+
+  it('serializa cuerpos parseados por Vercel para Clerk', () => {
+    expect(serializeFormBody({
+      identifier: 'admin@botica.pe',
+      strategy: 'password',
+      optional: null,
+    })).toBe('identifier=admin%40botica.pe&strategy=password')
   })
 })
