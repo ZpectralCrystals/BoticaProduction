@@ -38,7 +38,7 @@ export function ClerkSignInButton({
   return (
     <SignInButton mode={mode} forceRedirectUrl={redirectUrl}>
       {children ?? (
-        <button className={buttonClass}>Iniciar sesión con Clerk</button>
+        <button className={buttonClass}>Ingresar con correo</button>
       )}
     </SignInButton>
   )

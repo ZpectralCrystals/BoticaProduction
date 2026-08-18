@@ -30,7 +30,7 @@ import { TrasladosAlmacenPage } from '@/pages/traslados-almacen-page'
 import { DevolucionesPage } from '@/pages/devoluciones-page'
 import { ConsistenciaPage } from '@/pages/consistencia-page'
 import { AlertasPage } from '@/pages/alertas-page'
-import { ClerkTestPage } from '@/pages/clerk-test-page'
+import { EmailAuthCallbackPage } from '@/pages/email-auth-callback-page'
 import { ClerkLoginPage } from '@/pages/clerk-login-page'
 
 export const router = createBrowserRouter([
@@ -246,7 +246,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/auth/clerk',
-    element: <ClerkTestPage />,
+    element: <EmailAuthCallbackPage />,
   },
   {
     path: '/login/clerk',

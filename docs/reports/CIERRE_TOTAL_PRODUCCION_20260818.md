@@ -10,7 +10,7 @@ Programación, base de datos, respaldo y autenticación Clerk quedaron cerrados.
 ## Producción
 
 - Vercel desplegado desde `main`.
-- Última corrección Clerk desplegada: `7340aa5`.
+- Despliegue automatico desde la rama `main`.
 - `GET /api/health/ready`: HTTP 200.
 - Fastify activo, PostgreSQL conectado y 64 productos activos.
 - Supabase usa plan gratuito; SUNAT queda fuera de esta fase.
@@ -21,12 +21,15 @@ Programación, base de datos, respaldo y autenticación Clerk quedaron cerrados.
 - Contraseña anterior rechazada; contraseña nueva validada.
 - Secreto actual guardado en Vercel y macOS Keychain, no en Git.
 - Google OAuth deshabilitado hasta contar con Client ID y Client Secret propios.
+- Registro publico por correo deshabilitado; altas y vinculos son administrativos.
 
 ## Clerk
 
 - Identidad de producción creada para `gustavogaldelg@gmail.com`.
 - Administrador ERP DNI `00000000` vinculado con Clerk.
 - Proxy productivo GET/POST corregido para Vercel.
+- Formulario localizado al espanol y presentado como "Ingreso con correo".
+- Retorno `/auth/clerk` convertido en callback operativo sin diagnosticos publicos.
 - Contraseña aceptada y flujo llegó a verificación de nuevo dispositivo.
 - Queda únicamente ingresar el código temporal recibido por correo; es una medida
   de seguridad del propietario, no un pendiente de programación.
@@ -45,7 +48,7 @@ Programación, base de datos, respaldo y autenticación Clerk quedaron cerrados.
 ## Pruebas
 
 - Backend: 150/150.
-- Frontend: 58/58.
+- Frontend: 61/61.
 - TypeScript backend: limpio.
 - Scripts de backup: sintaxis Bash válida.
 - Salud productiva: HTTP 200.
@@ -58,3 +61,8 @@ Programación, base de datos, respaldo y autenticación Clerk quedaron cerrados.
 4. Clerk valida identidad; ERP conserva rol, permisos y estado operativo.
 
 No documentar contraseñas, códigos temporales ni secretos en archivos del proyecto.
+
+## Alcance pospuesto
+
+SUNAT queda para una fase independiente. El cierre actual conserva validaciones
+locales de RUC/DNI y no depende de servicios tributarios externos.

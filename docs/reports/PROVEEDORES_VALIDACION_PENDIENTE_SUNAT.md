@@ -1,6 +1,11 @@
 # PROVEEDORES - VALIDACION SUNAT PENDIENTE
 
-Fecha: 2026-04-12
+Fecha: 2026-08-18
+
+## Decision de alcance
+
+SUNAT queda formalmente pospuesto. No bloquea el cierre funcional ni el despliegue
+de inventario, compras, ventas, caja, usuarios o autenticacion.
 
 ## Estado actual implementado
 
@@ -41,3 +46,7 @@ Cuando se aborde la integración SUNAT:
 2. precargar razón social oficial
 3. registrar fecha y resultado de validación
 4. permitir override manual sólo a usuarios administradores
+5. definir proveedor/API, credenciales, limites y costos
+6. agregar timeout, reintentos y operacion manual cuando SUNAT no responda
+7. guardar auditoria sin almacenar secretos ni respuestas sensibles innecesarias
+8. probar altas, ediciones, caidas externas y RUC invalido

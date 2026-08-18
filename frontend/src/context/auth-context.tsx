@@ -54,7 +54,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setUser(response.user)
       return response.user
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'No se pudo sincronizar sesión Clerk'
+      const msg = err instanceof Error ? err.message : 'No se pudo validar el acceso con correo'
       setError(msg)
       throw err
     } finally {

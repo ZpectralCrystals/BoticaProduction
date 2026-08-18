@@ -1,5 +1,6 @@
 import type { PropsWithChildren } from 'react'
 import { ClerkProvider } from '@clerk/clerk-react'
+import { esES } from '@clerk/localizations'
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CLERK PROVIDER WRAPPER
@@ -24,7 +25,11 @@ export function ClerkProviderWrapper({ children }: PropsWithChildren) {
   }
 
   return (
-    <ClerkProvider publishableKey={CLERK_KEY} proxyUrl={CLERK_PROXY_URL}>
+    <ClerkProvider
+      localization={esES}
+      publishableKey={CLERK_KEY}
+      proxyUrl={CLERK_PROXY_URL}
+    >
       {children}
     </ClerkProvider>
   )
