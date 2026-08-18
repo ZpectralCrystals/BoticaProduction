@@ -68,6 +68,7 @@ function ClerkSignInView() {
               'border border-slate-200 hover:bg-slate-50 transition-colors',
             formButtonPrimary:
               'bg-slate-800 hover:bg-slate-700 transition-colors',
+            footerAction: 'hidden',
             footerActionLink: 'text-slate-600 hover:text-slate-900',
           },
         }}
