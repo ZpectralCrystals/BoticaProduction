@@ -12,8 +12,11 @@ describe('proxy Clerk', () => {
     expect(extractClerkProxyPath('/api/clerk/npm/package.js?v=1')).toBe('/npm/package.js?v=1')
     expect(extractClerkProxyPath('/__clerk/v1/client')).toBe('/v1/client')
     expect(
-      extractClerkProxyPath('/api/clerk-proxy?clerk_path=npm/package.js&v=1'),
+      extractClerkProxyPath('/api/clerk-proxy?clerk_path=npm/package.js&path=npm/package.js&v=1'),
     ).toBe('/npm/package.js?v=1')
+    expect(
+      extractClerkProxyPath('/__clerk/v1/client?clerk_path=v1/client&path=v1/client&v=1'),
+    ).toBe('/v1/client?v=1')
   })
 
   it('deriva URL pública desde authorized parties', () => {

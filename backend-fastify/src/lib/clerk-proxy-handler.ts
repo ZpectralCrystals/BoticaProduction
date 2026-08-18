@@ -22,6 +22,7 @@ export function extractClerkProxyPath(rawUrl: string | undefined) {
     const rewrittenPath = url.searchParams.get('clerk_path')
     if (!rewrittenPath) throw new Error('Ruta de proxy Clerk vacía')
     url.searchParams.delete('clerk_path')
+    url.searchParams.delete('path')
     const query = url.searchParams.toString()
     return `/${rewrittenPath.replace(/^\/+/, '')}${query ? `?${query}` : ''}`
   }
@@ -36,7 +37,10 @@ export function extractClerkProxyPath(rawUrl: string | undefined) {
   }
 
   const pathname = url.pathname.slice(prefix.length) || '/'
-  return `${pathname}${url.search}`
+  url.searchParams.delete('clerk_path')
+  url.searchParams.delete('path')
+  const query = url.searchParams.toString()
+  return `${pathname}${query ? `?${query}` : ''}`
 }
 
 export function resolveClerkProxyUrl(authorizedParties: string | undefined) {
@@ -87,6 +91,18 @@ async function readRequestBody(request: IncomingMessage) {
   if (parsedBody !== undefined) {
     if (Buffer.isBuffer(parsedBody)) return parsedBody
     if (typeof parsedBody === 'string') return Buffer.from(parsedBody)
+
+    const webStream = parsedBody as { getReader?: () => ReadableStreamDefaultReader<Uint8Array> }
+    if (typeof webStream.getReader === 'function') {
+      const chunks: Buffer[] = []
+      const reader = webStream.getReader()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (value) chunks.push(Buffer.from(value))
+      }
+      return chunks.length > 0 ? Buffer.concat(chunks) : undefined
+    }
 
     const contentType = Array.isArray(request.headers['content-type'])
       ? request.headers['content-type'][0]
