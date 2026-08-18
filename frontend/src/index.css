@@ -1,0 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --font-sans: 'Montserrat', 'Segoe UI', sans-serif;
+  --font-display: 'Montserrat', 'Segoe UI', sans-serif;
+}
+
+:root {
+  --background: #fff8f1;
+  --foreground: #16322d;
+  --muted: #5e6d69;
+  --border: rgba(2, 193, 161, 0.14);
+  --surface: rgba(255, 255, 255, 0.8);
+  --surface-strong: rgba(255, 255, 255, 0.96);
+  --primary: #02c1a1;
+  --primary-strong: #018c77;
+  --accent: #ff8800;
+  --success: #169f76;
+  --warning: #ff8800;
+  --danger: #d95f46;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--foreground);
+  background:
+    radial-gradient(circle at top left, rgba(2, 193, 161, 0.2), transparent 30%),
+    radial-gradient(circle at top right, rgba(255, 136, 0, 0.18), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(2, 193, 161, 0.12), transparent 24%),
+    linear-gradient(180deg, #fffdf9 0%, #fff5ea 100%);
+  font-family: 'Montserrat', 'Segoe UI', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::selection {
+  color: white;
+  background: rgba(2, 193, 161, 0.85);
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(16, 33, 29, 0.18);
+}
+
+.grid-glow {
+  background-image:
+    linear-gradient(rgba(22, 50, 45, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(22, 50, 45, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.glass-surface {
+  background: var(--surface);
+  backdrop-filter: blur(20px);
+}

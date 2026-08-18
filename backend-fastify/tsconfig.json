@@ -1,0 +1,53 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "src/server.ts",
+    "src/plugins/auth.ts",
+    "src/plugins/db.ts",
+    "src/routes/appointments.routes.ts",
+    "src/routes/audit.routes.ts",
+    "src/routes/auth.routes.ts",
+    "src/routes/caja.routes.ts",
+    "src/routes/dashboard.routes.ts",
+    "src/routes/debtors.routes.ts",
+    "src/routes/doctors.routes.ts",
+    "src/routes/histories.routes.ts",
+    "src/routes/inventory.routes.ts",
+    "src/routes/misc-inventory.routes.ts",
+    "src/routes/patients.routes.ts",
+    "src/routes/prescriptions.routes.ts",
+    "src/routes/profile.routes.ts",
+    "src/routes/providers.routes.ts",
+    "src/routes/purchases.routes.ts",
+    "src/routes/rentals.routes.ts",
+    "src/routes/reports.routes.ts",
+    "src/routes/sales.routes.ts"
+    ,"src/routes/services.routes.ts"
+    ,"src/routes/transfers.routes.ts"
+    ,"src/routes/users.routes.ts"
+  ],
+  "exclude": ["node_modules", "dist", "src/services/**/*", "src/schemas/**/*", "src/types/**/*", "src/routes/clinical.routes.ts", "src/routes/kardex.routes.ts", "src/routes/inventario.routes.ts", "src/routes/ventas.routes.ts", "src/plugins/supabase.ts", "src/plugins/error-handler.ts"]
+}

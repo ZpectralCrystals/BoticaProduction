@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "botica-el-pueblo": {
+      "command": "/bin/bash",
+      "args": ["/Volumes/MAC/MAC Ext/Desktop/BoticaElPueblo/mcp-server/run.sh"],
+      "env": {
+        "DB_HOST": "localhost",
+        "DB_NAME": "botica_db",
+        "DB_PORT": "5432",
+        "DB_USER": "gustavogalvez",
+        "DB_PASS": ""
+      }
+    }
+  }
+}
