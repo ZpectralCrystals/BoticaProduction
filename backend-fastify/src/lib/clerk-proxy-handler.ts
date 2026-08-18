@@ -17,6 +17,15 @@ const RESPONSE_HEADERS_TO_DROP = new Set([
 
 export function extractClerkProxyPath(rawUrl: string | undefined) {
   const url = new URL(rawUrl ?? '/', 'http://internal')
+
+  if (url.pathname === '/api/clerk-proxy') {
+    const rewrittenPath = url.searchParams.get('clerk_path')
+    if (!rewrittenPath) throw new Error('Ruta de proxy Clerk vacía')
+    url.searchParams.delete('clerk_path')
+    const query = url.searchParams.toString()
+    return `/${rewrittenPath.replace(/^\/+/, '')}${query ? `?${query}` : ''}`
+  }
+
   const prefixes = ['/api/clerk', '/__clerk']
   const prefix = prefixes.find((candidate) =>
     url.pathname === candidate || url.pathname.startsWith(`${candidate}/`),

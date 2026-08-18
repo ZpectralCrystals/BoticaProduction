@@ -4,7 +4,7 @@
   "buildCommand": "npm run build --prefix frontend && npm run build --prefix backend-fastify",
   "outputDirectory": "frontend/dist",
   "functions": {
-    "api/clerk/[...path].ts": {
+    "api/clerk-proxy.ts": {
       "maxDuration": 30,
       "memory": 1024
     },
@@ -16,7 +16,7 @@
   "rewrites": [
     {
       "source": "/__clerk/:path*",
-      "destination": "/api/clerk/:path*"
+      "destination": "/api/clerk-proxy?clerk_path=:path*"
     },
     {
       "source": "/api/:path*",
