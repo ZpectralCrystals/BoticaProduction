@@ -28,6 +28,18 @@ Usar Clerk como proveedor de identidad sin mover a Clerk la autorización del ER
 - Validación del usuario Clerk antes de vincular cuando existe `CLERK_SECRET_KEY`.
 - Pruebas de token válido, inválido, sin vínculo y vínculo revocado.
 
+## Activación de producción
+
+- Aplicación Clerk: `Botica El Pueblo`.
+- Instancia de producción vinculada a `botica-production.vercel.app`.
+- Variables Clerk cargadas como secretos en Vercel para Production y Preview.
+- `CLERK_AUTHORIZED_PARTIES` restringido a `https://botica-production.vercel.app`.
+- Despliegue productivo reconstruido después de cargar las variables.
+- Autenticación principal conservada por DNI como contingencia operativa.
+
+Google OAuth queda fuera del cierre actual hasta disponer de credenciales OAuth propias
+de producción. El acceso Clerk habilitado para esta fase es por correo.
+
 ## Variables requeridas
 
 Frontend:
