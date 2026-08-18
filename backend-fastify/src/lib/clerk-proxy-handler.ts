@@ -104,6 +104,7 @@ export async function handleClerkProxy(
     const targetPath = extractClerkProxyPath(request.url)
     const targetUrl = new URL(targetPath, CLERK_FRONTEND_API)
     const method = request.method ?? 'GET'
+    const remoteAddress = request.socket?.remoteAddress
     const body = method === 'GET' || method === 'HEAD'
       ? undefined
       : await readRequestBody(request)
@@ -111,7 +112,7 @@ export async function handleClerkProxy(
       request.headers,
       secretKey,
       proxyUrl,
-      request.socket.remoteAddress,
+      remoteAddress,
     )
 
     const upstream = await fetch(targetUrl, {
