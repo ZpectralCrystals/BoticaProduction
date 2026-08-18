@@ -7,10 +7,7 @@ import { CLERK_ENABLED } from '@/lib/clerk-provider'
 // ══════════════════════════════════════════════════════════════════════════════
 // Ruta pública. Permite iniciar sesión con Clerk (email, social, etc.)
 // Si Clerk no está configurado: muestra instrucciones de setup.
-// Tras el login Clerk, redirige a /auth/clerk para ver el estado de sesión.
-//
-// NOTA: Esta sesión Clerk es independiente del JWT local del ERP.
-// Para acceder al panel ERP, el usuario debe iniciar sesión en / (login local).
+// Tras el login, /auth/clerk valida el vínculo y activa la sesión ERP.
 // ══════════════════════════════════════════════════════════════════════════════
 
 export function ClerkLoginPage() {
@@ -43,7 +40,7 @@ export function ClerkLoginPage() {
 
       {/* Footer */}
       <footer className="py-4 text-center text-xs text-slate-400">
-        Auth Clerk — fase de integración progresiva · ERP Botica El Pueblo
+        Identidad Clerk · permisos ERP Botica El Pueblo
       </footer>
     </div>
   )
@@ -59,7 +56,7 @@ function ClerkSignInView() {
       <div className="text-center">
         <h1 className="text-xl font-semibold text-slate-800">Iniciar sesión con Clerk</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Esta sesión es independiente del acceso al ERP
+          Tu identidad se vinculará automáticamente con tu usuario ERP
         </p>
       </div>
 
@@ -84,7 +81,7 @@ function ClerkSignInView() {
       />
 
       <p className="max-w-sm text-center text-xs text-slate-400">
-        Tras iniciar sesión, podrás ver el estado de coexistencia con el ERP en{' '}
+        Tras iniciar sesión, validaremos tu acceso ERP en{' '}
         <Link to="/auth/clerk" className="underline hover:text-slate-600">
           /auth/clerk
         </Link>

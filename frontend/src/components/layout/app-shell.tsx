@@ -33,6 +33,7 @@ import { BrandLogo } from '@/components/shared/brand-logo'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuth } from '@/context/auth-context'
+import { useAuthBridge } from '@/context/auth-bridge'
 import type { AppSection } from '@/lib/app-sections'
 import { cn } from '@/lib/utils'
 
@@ -136,7 +137,8 @@ function SidebarContent({
   onNavigate?: () => void
   onToggleCollapsed?: () => void
 }) {
-  const { canAccessSection, roleDefinition, user, signOut } = useAuth()
+  const { canAccessSection, roleDefinition, user } = useAuth()
+  const { signOutAll } = useAuthBridge()
   const navigate = useNavigate()
   const visibleNavigationItems = navigationItems.filter((item) =>
     canAccessSection(item.section),
@@ -244,7 +246,7 @@ function SidebarContent({
           title={collapsed ? `Cerrar sesion - ${user?.nombre ?? 'usuario'}` : undefined}
           variant="outline"
           onClick={async () => {
-            await signOut()
+            await signOutAll()
             onNavigate?.()
             navigate('/')
           }}

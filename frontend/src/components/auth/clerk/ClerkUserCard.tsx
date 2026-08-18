@@ -1,4 +1,4 @@
-import { SignOutButton, UserButton } from '@clerk/clerk-react'
+import { UserButton } from '@clerk/clerk-react'
 import { useAuthBridge } from '@/context/auth-bridge'
 import { CLERK_ENABLED } from '@/lib/clerk-provider'
 
@@ -14,7 +14,7 @@ interface ClerkUserCardProps {
 }
 
 export function ClerkUserCard({ showSignOut = true, compact = false }: ClerkUserCardProps) {
-  const { clerkSignedIn, clerkEmail, clerkDisplayName, clerkUserId, clerkAvatarUrl } = useAuthBridge()
+  const { clerkSignedIn, clerkEmail, clerkDisplayName, clerkUserId, clerkAvatarUrl, signOutAll } = useAuthBridge()
 
   if (!clerkSignedIn) return null
 
@@ -62,11 +62,13 @@ export function ClerkUserCard({ showSignOut = true, compact = false }: ClerkUser
       </div>
 
       {showSignOut && CLERK_ENABLED && (
-        <SignOutButton>
-          <button className="mt-3 w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900">
-            Cerrar sesión Clerk
-          </button>
-        </SignOutButton>
+        <button
+          className="mt-3 w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+          onClick={() => { void signOutAll() }}
+          type="button"
+        >
+          Cerrar sesión
+        </button>
       )}
     </div>
   )

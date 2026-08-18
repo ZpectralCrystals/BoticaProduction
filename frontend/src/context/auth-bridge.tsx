@@ -4,63 +4,34 @@ import { useAuth as useClerkAuth, useUser as useClerkUser } from '@clerk/clerk-r
 import { useAuth as useLocalAuth } from '@/context/auth-context'
 import { CLERK_ENABLED } from '@/lib/clerk-provider'
 
-// ══════════════════════════════════════════════════════════════════════════════
-// AUTH BRIDGE — Capa de coexistencia local JWT + Clerk
-// ══════════════════════════════════════════════════════════════════════════════
-//
-// ARQUITECTURA DE AUTENTICACIÓN:
-//
-//   FASE ACTUAL (en uso):
-//   ┌─────────────────────────────────────┐
-//   │  Auth local (JWT)                   │
-//   │  - login con DNI + clave            │
-//   │  - cookie botica_token              │
-//   │  - bot_usuarios como fuente única   │
-//   └─────────────────────────────────────┘
-//
-//   FASE SIGUIENTE (en preparación):
-//   ┌─────────────────────────────────────┐
-//   │  Clerk (auth layer)                 │
-//   │  - login social / email             │
-//   │  - JWT de Clerk verificado en back  │
-//   │  - sync Clerk.id ↔ bot_usuarios     │
-//   └─────────────────────────────────────┘
-//
-//   INVARIANTE PERMANENTE:
-//   bot_usuarios sigue siendo la fuente de verdad para:
-//   - roles ERP (super, admin, vendedor...)
-//   - permisos por módulo
-//   - DNI y datos internos de empleado
-//   Clerk solo gestiona identidad/sesión, nunca lógica de negocio ERP.
-//
-//   PUNTO DE SINCRONIZACIÓN FUTURA (Fase 3):
-//   Al completar la migración, el backend deberá:
-//   1. Verificar el JWT de Clerk en cada request
-//   2. Buscar en bot_usuarios por clerk_user_id (campo pendiente de agregar)
-//   3. Devolver roles y permisos desde bot_usuarios
-//   4. Permitir login solo si existe la relación Clerk.id ↔ bot_usuarios.nid
-//
-// ══════════════════════════════════════════════════════════════════════════════
+// Clerk prueba identidad; la sesión ERP conserva roles/permisos de bot_usuarios.
+// Login DNI permanece como acceso local de contingencia.
 
-export type AuthMode = 'local' | 'clerk'
+export type AuthMode = 'local' | 'hybrid'
 
 /** Qué sesiones están activas actualmente (para lógica de UI) */
 export type ActiveSession = 'local' | 'clerk' | 'both' | 'none'
 
 export interface ClerkBridgeData {
+  clerkLoaded: boolean
   clerkSignedIn: boolean
   clerkEmail: string | null
   clerkUserId: string | null
   clerkDisplayName: string | null
   clerkAvatarUrl: string | null
+  getClerkToken: () => Promise<string | null>
+  signOutClerk: () => Promise<void>
 }
 
 const defaultClerkData: ClerkBridgeData = {
+  clerkLoaded: true,
   clerkSignedIn: false,
   clerkEmail: null,
   clerkUserId: null,
   clerkDisplayName: null,
   clerkAvatarUrl: null,
+  getClerkToken: async () => null,
+  signOutClerk: async () => {},
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -73,15 +44,18 @@ const ClerkBridgeContext = createContext<ClerkBridgeData>(defaultClerkData)
 // Componente interno que llama hooks de Clerk.
 // Solo se monta cuando ClerkProvider está activo (CLERK_ENABLED=true).
 function ClerkBridgeInner({ children }: PropsWithChildren) {
-  const { isSignedIn } = useClerkAuth()
+  const { getToken, isLoaded, isSignedIn, signOut } = useClerkAuth()
   const { user } = useClerkUser()
 
   const value: ClerkBridgeData = {
+    clerkLoaded: isLoaded,
     clerkSignedIn: isSignedIn ?? false,
     clerkEmail: user?.primaryEmailAddress?.emailAddress ?? null,
     clerkUserId: user?.id ?? null,
     clerkDisplayName: user?.fullName ?? user?.firstName ?? null,
     clerkAvatarUrl: user?.imageUrl ?? null,
+    getClerkToken: getToken,
+    signOutClerk: async () => { await signOut() },
   }
 
   return (
@@ -126,17 +100,15 @@ export function useAuthBridge() {
     : hasClerk ? 'clerk'
     : 'none'
 
-  const erpLinkedByClerk = hasClerk && hasLocal
+  const erpLinkedByClerk = hasClerk && local.user?.authSource === 'clerk'
 
   return {
-    // ── Modo oficial de auth para el ERP ─────────────────────────────────
-    // 'local' hasta que se complete la migración Fase 3.
-    // Cambiar a 'clerk' solo cuando backend verifique JWT de Clerk.
-    mode: 'local' as AuthMode,
+    // Clerk gestiona identidad; JWT ERP conserva roles y permisos internos.
+    mode: (CLERK_ENABLED ? 'hybrid' : 'local') as AuthMode,
 
     // ── Qué sesiones están activas (para UI, indicadores) ─────────────────
     activeSession,
-    isAuthenticated: hasLocal || hasClerk,
+    isAuthenticated: hasLocal,
     erpSessionActive: hasLocal,
     erpLinkedByClerk,
 
@@ -154,6 +126,16 @@ export function useAuthBridge() {
     clerkUserId: clerk.clerkUserId,
     clerkDisplayName: clerk.clerkDisplayName,
     clerkAvatarUrl: clerk.clerkAvatarUrl,
+    clerkLoaded: clerk.clerkLoaded,
+    getClerkToken: clerk.getClerkToken,
+    signOutClerk: clerk.signOutClerk,
+    signOutAll: async () => {
+      try {
+        await clerk.signOutClerk()
+      } finally {
+        await local.signOut()
+      }
+    },
 
     // ── Feature flag ──────────────────────────────────────────────────────
     clerkEnabled: CLERK_ENABLED,

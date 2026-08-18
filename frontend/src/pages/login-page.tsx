@@ -7,6 +7,8 @@ import { useAuth } from '@/context/auth-context'
 import { BrandLogo } from '@/components/shared/brand-logo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ClerkSignInButton } from '@/components/auth/clerk/ClerkSignInButton'
+import { CLERK_ENABLED } from '@/lib/clerk-provider'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -101,6 +103,21 @@ export function LoginPage() {
               {submitting ? 'Verificando...' : 'Ingresar'}
             </Button>
           </form>
+
+          {CLERK_ENABLED ? (
+            <div className="mt-5 space-y-4">
+              <div className="flex items-center gap-3 text-xs text-muted">
+                <span className="h-px flex-1 bg-border" />
+                <span>o</span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              <ClerkSignInButton redirectUrl="/auth/clerk" variant="outline">
+                <button className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted">
+                  Ingresar con correo
+                </button>
+              </ClerkSignInButton>
+            </div>
+          ) : null}
 
         </div>
       </div>

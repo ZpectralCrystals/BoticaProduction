@@ -50,6 +50,7 @@ export interface AuthUser {
   super: boolean
   admin: boolean
   permisos: string[]
+  authSource?: 'local' | 'clerk'
 }
 
 export interface ClerkSyncSuccess {
@@ -753,6 +754,13 @@ export interface ApiUsuarioClerkLinkStatus {
   clerkLinked: boolean
   clerkUserId: string | null
 }
+export interface ApiClerkUser {
+  id: string
+  nombre: string
+  email: string | null
+  avatarUrl: string | null
+  banned: boolean
+}
 export function apiGetUsuarios() { return requestV1<ApiUsuario[]>('/usuarios') }
 export function apiUsuarioAction(data: Record<string, unknown>) { return requestV1<{ ok: boolean; id?: string; reactivado?: boolean; message?: string }>('/usuarios', { method: 'POST', body: JSON.stringify(data) }) }
 export function apiGetUsuarioClerkLink(id: string) { return requestV1<ApiUsuarioClerkLinkStatus>(`/usuarios/${id}/clerk-link`) }
@@ -767,6 +775,9 @@ export function apiUnlinkUsuarioClerk(id: string) {
     `/usuarios/${id}/clerk-link`,
     { method: 'DELETE' },
   )
+}
+export function apiSearchClerkUsers(query: string) {
+  return requestV1<ApiClerkUser[]>(`/usuarios/clerk/search?q=${encodeURIComponent(query)}`)
 }
 
 // ═══════════════════════════════════════════

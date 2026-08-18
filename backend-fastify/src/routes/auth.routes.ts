@@ -1,89 +1,38 @@
 import type { FastifyInstance, FastifyPluginOptions } from 'fastify'
 import bcrypt from 'bcryptjs'
-import { createPublicKey, verify as verifySignature } from 'node:crypto'
+import { verifyToken } from '@clerk/backend'
+import type { AuthTokenPayload } from '../plugins/auth.js'
 
-type JwtHeader = {
-  alg?: string
-  kid?: string
-}
-
-type JwtPayload = {
-  sub?: string
-  iss?: string
-  aud?: string | string[]
-  exp?: number
-  nbf?: number
-}
-
-function decodeBase64Url(value: string) {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/')
-  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
-  return Buffer.from(padded, 'base64')
-}
-
-function decodeJwtPart<T>(value: string): T {
-  const raw = decodeBase64Url(value).toString('utf8')
-  return JSON.parse(raw) as T
+function envList(value: string | undefined) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim().replace(/\/$/, ''))
+    .filter(Boolean)
 }
 
 async function verifyClerkToken(token: string) {
-  const jwksUrl = String(process.env.CLERK_JWKS_URL || '').trim()
+  const secretKey = String(process.env.CLERK_SECRET_KEY || '').trim()
+  const jwtKey = String(process.env.CLERK_JWT_KEY || '').trim()
   const expectedIssuer = String(process.env.CLERK_JWT_ISSUER || '').trim()
+  const authorizedParties = envList(
+    process.env.CLERK_AUTHORIZED_PARTIES || process.env.CORS_ORIGIN,
+  )
 
-  if (!jwksUrl) {
-    throw new Error('CLERK_JWKS_URL_NOT_CONFIGURED')
+  if (!secretKey && !jwtKey) {
+    throw new Error('CLERK_KEYS_NOT_CONFIGURED')
   }
 
-  const parts = token.split('.')
-  if (parts.length !== 3) {
-    throw new Error('CLERK_TOKEN_INVALID_FORMAT')
-  }
+  const payload = await verifyToken(token, {
+    ...(secretKey ? { secretKey } : {}),
+    ...(jwtKey ? { jwtKey } : {}),
+    ...(authorizedParties.length > 0 ? { authorizedParties } : {}),
+  })
 
-  const [encodedHeader, encodedPayload, encodedSignature] = parts
-  const header = decodeJwtPart<JwtHeader>(encodedHeader)
-  const payload = decodeJwtPart<JwtPayload>(encodedPayload)
-
-  if (header.alg !== 'RS256') {
-    throw new Error('CLERK_TOKEN_UNSUPPORTED_ALG')
-  }
-  if (!header.kid) {
-    throw new Error('CLERK_TOKEN_MISSING_KID')
-  }
   if (!payload.sub) {
     throw new Error('CLERK_TOKEN_MISSING_SUB')
   }
-
-  const now = Math.floor(Date.now() / 1000)
-  if (typeof payload.exp === 'number' && payload.exp <= now) {
-    throw new Error('CLERK_TOKEN_EXPIRED')
-  }
-  if (typeof payload.nbf === 'number' && payload.nbf > now) {
-    throw new Error('CLERK_TOKEN_NOT_YET_VALID')
-  }
   if (expectedIssuer && payload.iss !== expectedIssuer) {
     throw new Error('CLERK_TOKEN_INVALID_ISSUER')
-  }
-
-  const jwksResponse = await fetch(jwksUrl)
-  if (!jwksResponse.ok) {
-    throw new Error('CLERK_JWKS_FETCH_FAILED')
-  }
-
-  const jwks = await jwksResponse.json() as {
-    keys?: Array<Record<string, unknown> & { kid?: string }>
-  }
-  const matchingJwk = jwks.keys?.find((key) => key.kid === header.kid)
-  if (!matchingJwk) {
-    throw new Error('CLERK_JWK_NOT_FOUND')
-  }
-
-  const publicKey = createPublicKey({ key: matchingJwk as any, format: 'jwk' })
-  const signedContent = Buffer.from(`${encodedHeader}.${encodedPayload}`)
-  const signature = decodeBase64Url(encodedSignature)
-
-  const signatureOk = verifySignature('RSA-SHA256', signedContent, publicKey, signature)
-  if (!signatureOk) {
-    throw new Error('CLERK_TOKEN_INVALID_SIGNATURE')
   }
 
   return {
@@ -95,7 +44,14 @@ export default async function authRoutes(
   fastify: FastifyInstance,
   _options: FastifyPluginOptions,
 ) {
-  fastify.post('/clerk-sync', async (request, reply) => {
+  fastify.post('/clerk-sync', {
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: '15 minutes',
+      },
+    },
+  }, async (request, reply) => {
     const authHeader = String(request.headers.authorization || '')
     const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
 
@@ -144,7 +100,12 @@ export default async function authRoutes(
       })
     }
 
-    const token = await reply.jwtSign(user)
+    const tokenPayload: AuthTokenPayload = {
+      ...user,
+      authSource: 'clerk',
+      clerkUserId,
+    }
+    const token = await reply.jwtSign(tokenPayload)
 
     fastify.db.query(
       `INSERT INTO bot_auditoria (nusuario_id, cusuario, caccion, ctabla, nregistro_id, cdetalle)
@@ -163,7 +124,7 @@ export default async function authRoutes(
     return {
       linked: true,
       authSource: 'clerk',
-      user,
+      user: { ...user, authSource: 'clerk' },
       token,
     }
   })
@@ -177,8 +138,8 @@ export default async function authRoutes(
     if (!token) return reply.code(401).send({ error: 'NO HA INICIADO SESION' })
 
     try {
-      const payload = await fastify.jwt.verify<{ id: number }>(token)
-      const user = await fastify.buildAuthUser(payload.id)
+      const payload = await fastify.jwt.verify<AuthTokenPayload>(token)
+      const user = await fastify.resolveAuthUser(payload)
       if (!user) {
         return reply.code(401).send({ error: 'NO HA INICIADO SESION' })
       }
@@ -247,7 +208,8 @@ export default async function authRoutes(
       return reply.code(401).send({ error: 'USUARIO NO DISPONIBLE' })
     }
 
-    const token = await reply.jwtSign(user)
+    const tokenPayload: AuthTokenPayload = { ...user, authSource: 'local' }
+    const token = await reply.jwtSign(tokenPayload)
 
     // Fire-and-forget: audit de login exitoso
     fastify.db.query(
@@ -264,7 +226,7 @@ export default async function authRoutes(
       maxAge: 60 * 60 * 8,
     })
 
-    return { ...user, token }
+    return { ...user, authSource: 'local', token }
   })
 
   fastify.post('/logout', async (_request, reply) => {

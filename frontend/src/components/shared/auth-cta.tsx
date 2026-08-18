@@ -1,13 +1,15 @@
 import { LogOut } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/auth-context'
+import { useAuthBridge } from '@/context/auth-bridge'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Button } from '@/components/ui/button'
 
 export function AuthCallToAction() {
   const navigate = useNavigate()
-  const { defaultPath, user, roleDefinition, signOut } = useAuth()
+  const { defaultPath, user, roleDefinition } = useAuth()
+  const { signOutAll } = useAuthBridge()
 
   return (
     <div className="flex flex-wrap gap-3">
@@ -25,7 +27,7 @@ export function AuthCallToAction() {
           size="lg"
           variant="outline"
           onClick={async () => {
-            await signOut()
+            await signOutAll()
             navigate('/')
           }}
         >
@@ -39,7 +41,8 @@ export function AuthCallToAction() {
 
 export function SessionIndicator() {
   const navigate = useNavigate()
-  const { user, roleDefinition, signOut } = useAuth()
+  const { user, roleDefinition } = useAuth()
+  const { signOutAll } = useAuthBridge()
 
   return (
     <div className="flex items-center gap-2">
@@ -51,7 +54,7 @@ export function SessionIndicator() {
           size="sm"
           variant="outline"
           onClick={async () => {
-            await signOut()
+            await signOutAll()
             navigate('/')
           }}
         >

@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
-import { useState } from 'react'
-import { SignedIn, SignedOut, SignInButton, useAuth as useClerkAuth } from '@clerk/clerk-react'
+import { SignedIn, SignedOut, SignInButton } from '@clerk/clerk-react'
 import { CLERK_ENABLED } from '@/lib/clerk-provider'
 import { useAuthBridge } from '@/context/auth-bridge'
 import { useAuth } from '@/context/auth-context'
@@ -102,11 +101,10 @@ export function ClerkTestPage() {
             />
           </div>
 
-          {/* Advertencia: sesiones no vinculadas */}
-          {bridge.activeSession === 'both' && (
-            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 mt-1">
-              <span className="font-semibold">Sesiones independientes:</span> tienes sesión ERP y sesión
-              Clerk activas simultáneamente. La sincronización se implementará en Fase 3.
+          {bridge.erpLinkedByClerk && (
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-700 mt-1">
+              <span className="font-semibold">Sesión vinculada:</span> Clerk verificó identidad y ERP cargó
+              rol y permisos desde <code>bot_usuarios</code>.
             </div>
           )}
         </section>
@@ -144,14 +142,14 @@ export function ClerkTestPage() {
 
         {/* Nota arquitectónica */}
         <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-xs text-blue-800 space-y-1.5">
-          <p className="font-semibold text-sm">Arquitectura de migración</p>
+          <p className="font-semibold text-sm">Arquitectura activa</p>
           <p>
             <code className="rounded bg-blue-100 px-1">bot_usuarios</code> es la fuente de verdad para
             roles, permisos y acceso al ERP. Clerk gestiona identidad y sesión.
           </p>
           <p>
-            Sincronización <code className="rounded bg-blue-100 px-1">Clerk.id ↔ bot_usuarios</code>:
-            pendiente para Fase 3.
+            Sincronización <code className="rounded bg-blue-100 px-1">Clerk.id ↔ bot_usuarios</code> automática
+            al iniciar sesión. Desvincular revoca acceso ERP emitido por Clerk.
           </p>
           <div className="flex gap-2 pt-1 flex-wrap">
             <Link
@@ -176,48 +174,25 @@ export function ClerkTestPage() {
 
 function ClerkErpSyncPanel() {
   const bridge = useAuthBridge()
-  const { getToken } = useClerkAuth()
-  const { syncClerkSession } = useAuth()
-  const [syncing, setSyncing] = useState(false)
-  const [syncMessage, setSyncMessage] = useState<string | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
-
-  async function handleSync() {
-    setSyncing(true)
-    setSyncError(null)
-    setSyncMessage(null)
-
-    try {
-      const clerkToken = await getToken()
-      if (!clerkToken) {
-        setSyncError('No se pudo obtener token de Clerk. Vuelva a iniciar sesión en Clerk.')
-        return
-      }
-
-      const user = await syncClerkSession(clerkToken)
-      setSyncMessage(`Sesión ERP activada para ${user.nombre}. Ya puede ingresar al panel.`)
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'No se pudo sincronizar con ERP.'
-      setSyncError(msg)
-    } finally {
-      setSyncing(false)
-    }
-  }
+  const { error, loading } = useAuth()
 
   if (bridge.erpLinkedByClerk) {
     return (
       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">
         Usuario Clerk vinculado. Sesión ERP activa como{' '}
         <span className="font-semibold">{bridge.localUserName}</span>.
+        <Link className="ml-2 font-semibold underline" to="/panel">Ingresar al panel</Link>
       </div>
     )
   }
 
   return (
     <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
-      <p className="font-semibold">Usuario Clerk autenticado, pero sin sesión ERP activa.</p>
+      <p className="font-semibold">
+        {loading ? 'Validando vínculo con ERP...' : 'Usuario Clerk sin acceso ERP activo.'}
+      </p>
       <p>
-        Sincronice con el backend para validar vínculo en
+        El sistema valida automáticamente
         {' '}<code className="rounded bg-amber-100 px-1">bot_usuarios.cclerk_user_id</code>.
       </p>
       <p>
@@ -225,24 +200,9 @@ function ClerkErpSyncPanel() {
         {' '}<code className="rounded bg-amber-100 px-1">/panel/usuarios</code>{' '}
         por un administrador del ERP.
       </p>
-      <button
-        type="button"
-        onClick={handleSync}
-        disabled={syncing}
-        className="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {syncing ? 'Sincronizando...' : 'Sincronizar sesión ERP con Clerk'}
-      </button>
-
-      {syncMessage ? (
-        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700">
-          {syncMessage}
-        </p>
-      ) : null}
-
-      {syncError ? (
+      {error ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-red-700">
-          {syncError}
+          {error}
         </p>
       ) : null}
     </div>

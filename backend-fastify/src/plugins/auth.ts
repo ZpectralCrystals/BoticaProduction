@@ -11,12 +11,18 @@ export interface AuthUser {
   supervisor: boolean
   username: string
   permisos: string[]
+  authSource?: 'local' | 'clerk'
+}
+
+export interface AuthTokenPayload extends AuthUser {
+  authSource: 'local' | 'clerk'
+  clerkUserId?: string
 }
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
-    payload: AuthUser
-    user: AuthUser
+    payload: AuthTokenPayload
+    user: AuthTokenPayload
   }
 }
 
@@ -28,6 +34,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     requireAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>
     buildAuthUser: (userId: number) => Promise<AuthUser | null>
+    resolveAuthUser: (payload: Pick<AuthTokenPayload, 'id' | 'authSource' | 'clerkUserId'>) => Promise<AuthUser | null>
     hasAnyPermission: (user: AuthUser | null, sections: string[], allowAdmin?: boolean) => boolean
     requireAnyPermission: (
       request: FastifyRequest,
@@ -81,6 +88,28 @@ const authPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {
     }
   })
 
+  fastify.decorate('resolveAuthUser', async (payload) => {
+    const activeUser = await fastify.buildAuthUser(payload.id)
+    if (!activeUser) return null
+
+    const authSource = payload.authSource === 'clerk' ? 'clerk' : 'local'
+    if (authSource === 'clerk') {
+      if (!payload.clerkUserId) return null
+
+      const linkResult = await fastify.db.query<{ cclerk_user_id: string | null }>(
+        `SELECT cclerk_user_id
+         FROM bot_usuarios
+         WHERE nid = $1 AND cestado = 'A'
+         LIMIT 1`,
+        [payload.id],
+      )
+      const currentClerkUserId = linkResult.rows[0]?.cclerk_user_id?.trim() || null
+      if (currentClerkUserId !== payload.clerkUserId) return null
+    }
+
+    return { ...activeUser, authSource }
+  })
+
   fastify.decorate('requireAuth', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const token =
@@ -94,8 +123,8 @@ const authPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {
         return
       }
 
-      const payload = await fastify.jwt.verify<{ id: number }>(token)
-      const activeUser = await fastify.buildAuthUser(payload.id)
+      const payload = await fastify.jwt.verify<AuthTokenPayload>(token)
+      const activeUser = await fastify.resolveAuthUser(payload)
       if (!activeUser) {
         reply.code(401).send({ error: 'NO HA INICIADO SESION' })
         return

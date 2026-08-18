@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyPluginOptions, FastifyReply, FastifyRequest } from 'fastify'
 import bcrypt from 'bcryptjs'
+import { createClerkClient } from '@clerk/backend'
 
 type UserListRow = {
   nid: number
@@ -57,6 +58,11 @@ function buildClerkLinkResponse(row: ClerkLinkStatusRow) {
     clerkLinked: Boolean(clerkUserId),
     clerkUserId,
   }
+}
+
+function clerkClientFromEnv() {
+  const secretKey = String(process.env.CLERK_SECRET_KEY || '').trim()
+  return secretKey ? createClerkClient({ secretKey }) : null
 }
 
 async function getUserClerkStatus(
@@ -136,6 +142,37 @@ export default async function usersRoutes(
     return usuarios
   })
 
+  fastify.get('/clerk/search', { preHandler: fastify.requireAuth }, async (request, reply) => {
+    const actor = ensureUsersPermission(request, reply)
+    if (!actor) return
+
+    const query = String((request.query as { q?: string })?.q || '').trim()
+    if (query.length < 2) {
+      return reply.code(400).send({ message: 'Ingrese al menos 2 caracteres para buscar en Clerk' })
+    }
+
+    const clerkClient = clerkClientFromEnv()
+    if (!clerkClient) {
+      return reply.code(503).send({
+        message: 'Búsqueda Clerk no configurada: falta CLERK_SECRET_KEY',
+      })
+    }
+
+    try {
+      const result = await clerkClient.users.getUserList({ query, limit: 10 })
+      return result.data.map((user) => ({
+        id: user.id,
+        nombre: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || 'Usuario Clerk',
+        email: user.primaryEmailAddress?.emailAddress || null,
+        avatarUrl: user.imageUrl || null,
+        banned: Boolean(user.banned),
+      }))
+    } catch (error) {
+      request.log.error({ error }, 'No se pudo consultar usuarios Clerk')
+      return reply.code(502).send({ message: 'No se pudo consultar usuarios en Clerk' })
+    }
+  })
+
   fastify.get('/:id/clerk-link', { preHandler: fastify.requireAuth }, async (request, reply) => {
     const actor = ensureUsersPermission(request, reply)
     if (!actor) return
@@ -171,6 +208,24 @@ export default async function usersRoutes(
     }
     if (!isValidClerkUserId(clerkUserId)) {
       return reply.code(400).send({ message: 'El Clerk User ID debe iniciar con "user_" y ser válido' })
+    }
+
+    const clerkClient = clerkClientFromEnv()
+    if (clerkClient) {
+      try {
+        const clerkUser = await clerkClient.users.getUser(clerkUserId)
+        if (clerkUser.banned) {
+          return reply.code(400).send({ message: 'No se puede vincular un usuario Clerk bloqueado' })
+        }
+      } catch (error: any) {
+        request.log.warn({ error, clerkUserId }, 'Clerk User ID no pudo validarse')
+        const status = Number(error?.status || error?.statusCode || 0)
+        return reply.code(status === 404 ? 404 : 502).send({
+          message: status === 404
+            ? 'El usuario no existe en Clerk'
+            : 'No se pudo validar el usuario en Clerk',
+        })
+      }
     }
 
     const { targetUser, hasClerkColumn } = await getUserClerkStatusWithSchema(fastify, userId)

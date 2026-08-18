@@ -136,6 +136,23 @@ describe('usuarios Clerk link management', () => {
     })
   })
 
+  it('validates Clerk directory searches', async () => {
+    const shortQuery = await app.inject({
+      method: 'GET',
+      url: '/api/v1/usuarios/clerk/search?q=a',
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(shortQuery.statusCode).toBe(400)
+
+    const missingConfig = await app.inject({
+      method: 'GET',
+      url: '/api/v1/usuarios/clerk/search?q=usuario',
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(missingConfig.statusCode).toBe(503)
+    expect(missingConfig.json().message).toContain('CLERK_SECRET_KEY')
+  })
+
   it('rejects linking when clerkUserId is missing', async () => {
     const res = await app.inject({
       method: 'POST',

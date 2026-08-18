@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { KeyRound, Link2, Shield, ShieldCheck, Unlink2, User } from 'lucide-react'
+import { KeyRound, Link2, Search, Shield, ShieldCheck, Unlink2, User } from 'lucide-react'
 import {
   apiGetUsuarioClerkLink,
   apiGetUsuarios,
   apiLinkUsuarioClerk,
+  apiSearchClerkUsers,
   apiUnlinkUsuarioClerk,
   apiUsuarioAction,
 } from '@/lib/api'
-import type { ApiUsuario, ApiUsuarioClerkLinkStatus } from '@/lib/api'
+import type { ApiClerkUser, ApiUsuario, ApiUsuarioClerkLinkStatus } from '@/lib/api'
 import type { AppSection } from '@/lib/app-sections'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -58,6 +59,9 @@ export function UsuariosPage() {
   const [clerkUserIdInput, setClerkUserIdInput] = useState('')
   const [loadingClerkStatus, setLoadingClerkStatus] = useState(false)
   const [savingClerkStatus, setSavingClerkStatus] = useState(false)
+  const [clerkSearchQuery, setClerkSearchQuery] = useState('')
+  const [clerkSearchResults, setClerkSearchResults] = useState<ApiClerkUser[]>([])
+  const [searchingClerk, setSearchingClerk] = useState(false)
   const [estadoFiltro, setEstadoFiltro] = useState<EstadoFiltro>('activos')
 
   const load = useCallback(() => {
@@ -93,6 +97,8 @@ export function UsuariosPage() {
     setClerkTarget(u)
     setClerkStatus(null)
     setClerkUserIdInput(u.clerkUserId ?? bridge.clerkUserId ?? '')
+    setClerkSearchQuery(u.nombre)
+    setClerkSearchResults([])
     setShowClerkDialog(true)
     setLoadingClerkStatus(true)
     try {
@@ -173,6 +179,25 @@ export function UsuariosPage() {
     }
   }
 
+  const handleClerkSearch = async () => {
+    const query = clerkSearchQuery.trim()
+    if (query.length < 2) {
+      toast.error('Ingrese al menos 2 caracteres para buscar')
+      return
+    }
+
+    setSearchingClerk(true)
+    try {
+      const results = await apiSearchClerkUsers(query)
+      setClerkSearchResults(results)
+      if (results.length === 0) toast.info('No se encontraron usuarios en Clerk')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo buscar en Clerk')
+    } finally {
+      setSearchingClerk(false)
+    }
+  }
+
   const closeClerkDialog = () => {
     setShowClerkDialog(false)
     setClerkTarget(null)
@@ -180,6 +205,9 @@ export function UsuariosPage() {
     setClerkUserIdInput('')
     setLoadingClerkStatus(false)
     setSavingClerkStatus(false)
+    setClerkSearchQuery('')
+    setClerkSearchResults([])
+    setSearchingClerk(false)
   }
 
   if (loading) return <p className="p-6 text-muted">Cargando...</p>
@@ -362,6 +390,51 @@ export function UsuariosPage() {
             </div>
           )}
 
+          <div className="space-y-2">
+            <span className="text-sm font-semibold">Buscar usuario Clerk</span>
+            <div className="flex gap-2">
+              <Input
+                value={clerkSearchQuery}
+                onChange={(e) => setClerkSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void handleClerkSearch()
+                  }
+                }}
+                placeholder="Nombre o correo"
+              />
+              <Button type="button" variant="outline" onClick={handleClerkSearch} disabled={searchingClerk}>
+                <Search className="h-4 w-4" />
+                {searchingClerk ? 'Buscando' : 'Buscar'}
+              </Button>
+            </div>
+            {clerkSearchResults.length > 0 ? (
+              <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border p-2">
+                {clerkSearchResults.map((clerkUser) => (
+                  <button
+                    key={clerkUser.id}
+                    className="flex w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-muted disabled:opacity-50"
+                    disabled={clerkUser.banned}
+                    onClick={() => setClerkUserIdInput(clerkUser.id)}
+                    type="button"
+                  >
+                    {clerkUser.avatarUrl ? (
+                      <img alt="" className="h-8 w-8 rounded-full object-cover" src={clerkUser.avatarUrl} />
+                    ) : (
+                      <User className="h-8 w-8 rounded-full bg-muted p-2" />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{clerkUser.nombre}</span>
+                      <span className="block truncate text-xs text-muted">{clerkUser.email ?? clerkUser.id}</span>
+                    </span>
+                    {clerkUser.banned ? <Badge variant="danger">Bloqueado</Badge> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
           <label className="block space-y-1">
             <span className="text-sm font-semibold">Clerk User ID</span>
             <Input
@@ -370,7 +443,7 @@ export function UsuariosPage() {
               placeholder="user_2xY..."
             />
             <span className="text-xs text-muted">
-              Debe copiarse desde Clerk. En esta fase no se consulta Clerk API para autodescubrimiento.
+              Seleccione un resultado o ingrese el ID manualmente.
             </span>
           </label>
 
