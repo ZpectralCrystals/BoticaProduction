@@ -5,15 +5,19 @@ const FASTIFY_TOKEN_KEY = 'botica_fastify_token'
 async function requestV1<T>(path: string, options?: RequestInit): Promise<T> {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem(FASTIFY_TOKEN_KEY) : null
   let res: Response
+  const headers = new Headers(options?.headers)
+  if (typeof options?.body === 'string' && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
 
   try {
     res = await fetch(`${API_V1_BASE}${path}`, {
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
       ...options,
+      headers,
     })
   } catch {
     throw new Error('No se pudo conectar con el servidor. Verifique la red o el backend.')
