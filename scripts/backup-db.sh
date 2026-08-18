@@ -27,10 +27,26 @@ RETENTION_DAYS="${RETENTION_DAYS:-30}"
 VERIFY_BACKUP="${VERIFY_BACKUP:-true}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 BACKUP_FILE="${BACKUP_DIR}/botica_${TIMESTAMP}.sql.gz"
-PG_DUMP_BIN="${PG_DUMP_BIN:-$(command -v pg_dump || true)}"
+TEMP_FILE="${BACKUP_FILE}.tmp"
+PG_DUMP_BIN="${PG_DUMP_BIN:-}"
 
-if [ -z "${PG_DUMP_BIN}" ] && [ -x "/opt/homebrew/opt/postgresql@15/bin/pg_dump" ]; then
-  PG_DUMP_BIN="/opt/homebrew/opt/postgresql@15/bin/pg_dump"
+if [ -z "${PG_DUMP_BIN}" ]; then
+  for candidate in \
+    /opt/homebrew/opt/libpq/bin/pg_dump \
+    /opt/homebrew/opt/postgresql@18/bin/pg_dump \
+    /opt/homebrew/opt/postgresql@17/bin/pg_dump \
+    /opt/homebrew/opt/postgresql@16/bin/pg_dump \
+    /opt/homebrew/opt/postgresql@15/bin/pg_dump
+  do
+    if [ -x "${candidate}" ]; then
+      PG_DUMP_BIN="${candidate}"
+      break
+    fi
+  done
+fi
+
+if [ -z "${PG_DUMP_BIN}" ]; then
+  PG_DUMP_BIN="$(command -v pg_dump || true)"
 fi
 
 if [ -z "${PG_DUMP_BIN}" ]; then
@@ -46,7 +62,13 @@ log() {
 
 mkdir -p "${BACKUP_DIR}"
 
+cleanup() {
+  rm -f "${TEMP_FILE}"
+}
+trap cleanup EXIT
+
 log "Iniciando backup ${DB_NAME} -> ${BACKUP_FILE}"
+log "Cliente PostgreSQL: $("${PG_DUMP_BIN}" --version)"
 
 "${PG_DUMP_BIN}" \
   -h "${DB_HOST}" \
@@ -56,15 +78,18 @@ log "Iniciando backup ${DB_NAME} -> ${BACKUP_FILE}"
   --no-owner \
   --no-privileges \
   --format=plain \
-  | gzip > "${BACKUP_FILE}"
+  | gzip > "${TEMP_FILE}"
 
 if [ "${VERIFY_BACKUP}" = "true" ]; then
-  gzip -t "${BACKUP_FILE}"
-  if ! gzip -dc "${BACKUP_FILE}" >/dev/null; then
+  gzip -t "${TEMP_FILE}"
+  if ! gzip -dc "${TEMP_FILE}" >/dev/null; then
     log "ERROR: el backup no pasó la verificación de lectura"
     exit 1
   fi
 fi
+
+mv "${TEMP_FILE}" "${BACKUP_FILE}"
+trap - EXIT
 
 FILESIZE="$(du -h "${BACKUP_FILE}" | cut -f1)"
 log "Backup completado: ${BACKUP_FILE} (${FILESIZE})"

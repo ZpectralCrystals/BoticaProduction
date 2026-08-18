@@ -39,23 +39,33 @@ Usar Clerk como proveedor de identidad sin mover a Clerk la autorización del ER
 - Autenticación principal conservada por DNI como contingencia operativa.
 
 Google OAuth queda deshabilitado hasta disponer de credenciales OAuth propias de
-producción. El acceso Clerk habilitado para esta fase es por correo.
+producción. "Google" significa iniciar sesión con una cuenta Gmail mediante OAuth;
+no crea otro usuario ERP ni reemplaza sus roles. El acceso Clerk habilitado para
+esta fase es por correo y contraseña.
 
 ## Validación productiva
 
 - `GET /__clerk/v1/environment`: `200`, proxy Clerk operativo.
+- `POST /__clerk/v1/client/sign_ins`: proxy operativo; corregida compatibilidad
+  Vercel para POST, cuerpo parseado, `ReadableStream` y parámetros de rewrite.
 - `/login/clerk`: formulario de correo y contraseña renderizado.
+- Credenciales aceptadas; Clerk solicita código por correo al tratarse del primer
+  ingreso desde un dispositivo nuevo.
 - Google no aparece como opción mientras no tenga credenciales productivas.
 - Token Clerk inválido: `401 CLERK_TOKEN_INVALID`, sin degradar la API.
 - `GET /api/health/ready`: `200`, Fastify y PostgreSQL conectados.
-- Pruebas automatizadas: 149 backend y 58 frontend aprobadas.
+- Pruebas automatizadas: 150 backend y 58 frontend aprobadas.
 
-## Alta del primer usuario
+## Primer usuario productivo
 
-No se crea una identidad de una persona sin su correo y consentimiento. El primer
-usuario real debe registrarse en `/login/clerk`; luego un administrador lo vincula
-con su usuario ERP desde `Administración > Usuarios`. Este paso es operativo, no
-requiere cambios de programación.
+- Identidad Clerk creada para `gustavogaldelg@gmail.com`.
+- Correo marcado como verificado por Clerk.
+- Usuario vinculado al ERP `ADMINISTRADOR`, DNI `00000000`.
+- Panel de usuarios confirma `1 vinculado(s)`.
+- Primer ingreso llegó correctamente a verificación de nuevo dispositivo.
+
+El código temporal debe ingresarlo el propietario desde el correo recibido. Esta
+protección permanece activa; no se deshabilita para completar pruebas.
 
 ## Variables requeridas
 

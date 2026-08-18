@@ -7,12 +7,13 @@
 
 | Parámetro | Valor |
 |---|---|
-| Base de datos | PostgreSQL — `botica_db` |
+| Base de datos | PostgreSQL 17 — Supabase |
 | Script de backup | `scripts/backup-db.sh` |
-| Directorio destino | `backups/database/` (configurable) |
+| Wrapper macOS | `scripts/backup-supabase-keychain.sh` |
+| Directorio automático | `~/BoticaBackups/` |
 | Formato | SQL plano comprimido (`.sql.gz`) |
-| Retención recomendada | 30 días |
-| Frecuencia recomendada | Diaria a las 2:00 AM |
+| Retención activa | 30 días |
+| Frecuencia activa | Diaria a las 2:00 AM |
 
 ---
 
@@ -32,6 +33,22 @@ BOTICA_BACKUP_DIR=backups/database   # Opcional, default local del proyecto
 ---
 
 ## Uso del script
+
+En esta Mac, la contraseña Supabase vive en Keychain bajo el servicio
+`com.boticaelpueblo.supabase.db`; no se guarda en Git ni en el `plist`.
+
+```bash
+./scripts/backup-supabase-keychain.sh
+```
+
+La automatización activa usa LaunchAgent:
+
+```text
+~/Library/LaunchAgents/com.boticaelpueblo.backup.plist
+~/Library/Application Support/BoticaElPueblo/backup-supabase.sh
+```
+
+Estado verificado el 2026-08-18: ejecución `0`, gzip válido y SHA-256 válido.
 
 ### Dar permisos de ejecución (primera vez)
 
@@ -61,7 +78,7 @@ RETENTION_DAYS=30 ./scripts/backup-db.sh
 
 ---
 
-## Configuración de CRON (Linux/Mac)
+## Configuración de CRON (Linux)
 
 ### Abrir el crontab del usuario del servidor
 
@@ -182,5 +199,5 @@ Cuando la BD crezca (miles de ventas), estimar ~5-20 MB por backup comprimido.
 
 ## Backup existente
 
-Desde ahora el backup operativo oficial es `scripts/backup-db.sh`.
-Los archivos generados viven en `backups/database/` y no se versionan en git.
+Desde ahora el motor oficial es `scripts/backup-db.sh`. En esta Mac se invoca mediante
+Keychain y LaunchAgent. Los archivos generados no se versionan en Git.
