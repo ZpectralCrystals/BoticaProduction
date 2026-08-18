@@ -38,8 +38,24 @@ Usar Clerk como proveedor de identidad sin mover a Clerk la autorización del ER
 - Despliegue productivo reconstruido después de cargar las variables.
 - Autenticación principal conservada por DNI como contingencia operativa.
 
-Google OAuth queda fuera del cierre actual hasta disponer de credenciales OAuth propias
-de producción. El acceso Clerk habilitado para esta fase es por correo.
+Google OAuth queda deshabilitado hasta disponer de credenciales OAuth propias de
+producción. El acceso Clerk habilitado para esta fase es por correo.
+
+## Validación productiva
+
+- `GET /__clerk/v1/environment`: `200`, proxy Clerk operativo.
+- `/login/clerk`: formulario de correo y contraseña renderizado.
+- Google no aparece como opción mientras no tenga credenciales productivas.
+- Token Clerk inválido: `401 CLERK_TOKEN_INVALID`, sin degradar la API.
+- `GET /api/health/ready`: `200`, Fastify y PostgreSQL conectados.
+- Pruebas automatizadas: 149 backend y 58 frontend aprobadas.
+
+## Alta del primer usuario
+
+No se crea una identidad de una persona sin su correo y consentimiento. El primer
+usuario real debe registrarse en `/login/clerk`; luego un administrador lo vincula
+con su usuario ERP desde `Administración > Usuarios`. Este paso es operativo, no
+requiere cambios de programación.
 
 ## Variables requeridas
 
