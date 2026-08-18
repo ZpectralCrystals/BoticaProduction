@@ -4,53 +4,53 @@
 
 - Repo produccion: `https://github.com/ZpectralCrystals/BoticaProduction.git`
 - Rama: `main`
-- Frontend preparado para Vercel como app Vite estatica.
+- Frontend y backend preparados para convivir en el mismo proyecto Vercel.
 - Supabase staging migrado y auditado sin bloqueantes DB.
-- Backend Fastify sigue siendo servicio Node persistente; no es serverless Vercel todavia.
+- Backend Fastify adaptado como Vercel Function bajo `/api/*`.
+- Dominio productivo detectado: `https://botica-production.vercel.app`.
+- Variables del proyecto Vercel: pendientes de cargar.
 
 ## Cambios aplicados
 
-- `vercel.json` raiz define build desde `frontend/`.
+- `vercel.json` instala y compila frontend + backend.
+- `api/[...path].ts` entrega todas las rutas API a Fastify.
+- `backend-fastify/src/server.ts` permite arranque persistente y serverless.
+- `backend-fastify/src/plugins/db.ts` acepta variables Botica o `DATABASE_URL`/`POSTGRES_URL`.
 - `frontend/src/lib/api.ts` ahora soporta `VITE_API_BASE_URL`.
 - `frontend/.env.example` documenta API local/produccion.
 
 ## Variables Vercel necesarias
 
-En Vercel frontend, configurar solo cuando exista backend publico:
+No configurar `VITE_API_BASE_URL`: frontend usa `/api/v1` en el mismo dominio.
+
+Configurar en Vercel para Production, Preview y Development:
 
 ```env
-VITE_API_BASE_URL=https://TU_BACKEND_PUBLICO/api/v1
-```
-
-Si no se configura, frontend llama `/api/v1` relativo. Eso sirve en local por proxy Vite, pero en Vercel fallara salvo que exista backend/rewrite en el mismo dominio.
-
-## Backend produccion pendiente
-
-Elegir uno:
-
-- Railway/Render/Fly/VPS: recomendado para Fastify actual.
-- Convertir Fastify a Vercel serverless: posible, requiere adaptador y revisar rutas/tiempos.
-
-Variables minimas del backend host:
-
-```env
-NODE_ENV=production
 BOTICA_DB_HOST=aws-0-ca-central-1.pooler.supabase.com
 BOTICA_DB_PORT=6543
 BOTICA_DB_NAME=postgres
 BOTICA_DB_USER=postgres.hzekajqbtzzigvlmrdaa
-BOTICA_DB_PASSWORD=ROTAR_Y_CONFIGURAR
+BOTICA_DB_PASS=SECRETO_SUPABASE
 BOTICA_DB_SSL=require
 BOTICA_DB_SSL_REJECT_UNAUTHORIZED=false
-BOTICA_SKIP_DB_BOOTSTRAP=1
-BOTICA_APPLY_MIGRATIONS=0
-JWT_SECRET=GENERAR_SECRETO_LARGO
-CORS_ORIGIN=https://TU_DOMINIO_VERCEL
+PGOPTIONS=--search_path=public,extensions
+JWT_SECRET=SECRETO_ALEATORIO_MINIMO_32_CARACTERES
 ```
 
-## Antes de corte real
+`CORS_ORIGIN` es opcional en Vercel: se deriva de `VERCEL_URL`. Usarlo solo si se habilitan dominios externos adicionales.
 
-- Rotar password Supabase y actualizar backend host.
+## Validacion ejecutada
+
+- Backend: build, lint y 133/133 tests OK.
+- Frontend: build, lint y 56/56 tests OK.
+- Handler Vercel importado localmente sin errores.
+- API local + Supabase: `/health/ready` 200, 64 productos activos.
+- Produccion actual: frontend 200, login 405 porque deploy aun no incluye Function.
+
+## Pendiente para corte
+
+- Cargar variables secretas en Vercel.
+- Confirmar build serverless posterior al push.
+- Ejecutar smoke API contra dominio productivo.
 - Cambiar clave admin demo en sistema.
-- Definir dominio final Vercel para `CORS_ORIGIN`.
-- Ejecutar smoke API contra backend publico.
+- Rotar password Supabase después del corte y actualizar Vercel en la misma operación.

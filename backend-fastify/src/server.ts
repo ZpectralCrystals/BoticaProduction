@@ -1,4 +1,4 @@
-import Fastify from 'fastify'
+import Fastify, { type FastifyInstance } from 'fastify'
 import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
 import jwt from '@fastify/jwt'
@@ -7,6 +7,8 @@ import rateLimit from '@fastify/rate-limit'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
 import closeWithGrace from 'close-with-grace'
+import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 import dbPlugin from './plugins/db.js'
 import authPlugin from './plugins/auth.js'
 import errorHandlerPlugin from './plugins/error-handler.js'
@@ -45,8 +47,13 @@ import drizzlePlugin from './plugins/drizzle.js'
 
 const isProduction = process.env.NODE_ENV === 'production'
 
+function vercelOrigin() {
+  const host = process.env.VERCEL_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL
+  return host ? `https://${host}` : ''
+}
+
 function resolveCorsOrigins() {
-  const raw = process.env.CORS_ORIGIN || ''
+  const raw = process.env.CORS_ORIGIN || vercelOrigin()
   const origins = raw
     .split(',')
     .map((origin) => origin.trim())
@@ -83,6 +90,8 @@ const app = Fastify({
         : undefined,
   },
 })
+
+let buildPromise: Promise<FastifyInstance> | null = null
 
 async function registerPlugins() {
   const corsOrigins = resolveCorsOrigins()
@@ -230,75 +239,74 @@ async function registerRoutes() {
   )
 }
 
+function validateRuntimeConfig() {
+  const jwtSecret = process.env.JWT_SECRET
+
+  if (isProduction) {
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET es obligatoria en producción')
+    }
+    if (jwtSecret.length < 32) {
+      throw new Error(`JWT_SECRET es demasiado corta (${jwtSecret.length} caracteres; mínimo 32)`)
+    }
+    if (resolveCorsOrigins().length === 0) {
+      throw new Error('CORS_ORIGIN es obligatoria en producción fuera de Vercel')
+    }
+  } else if (!jwtSecret) {
+    app.log.warn(
+      'JWT_SECRET no está seteada — usando secreto de desarrollo inseguro. ' +
+      'NUNCA usar este modo en producción.',
+    )
+  }
+}
+
+export function buildApp(): Promise<FastifyInstance> {
+  if (!buildPromise) {
+    buildPromise = (async () => {
+      validateRuntimeConfig()
+      await registerPlugins()
+      await registerRoutes()
+      await app.ready()
+
+      const schemaResult = await checkSchema(app.db)
+      if (!schemaResult.ok) {
+        throw new Error(
+          `${formatSchemaReport(schemaResult)}\n` +
+          'La base de datos está desalineada con el código. Ejecute las migraciones pendientes.',
+        )
+      }
+      app.log.info(schemaResult.summary)
+      return app
+    })()
+  }
+  return buildPromise
+}
+
 async function start() {
   try {
-    const jwtSecret = process.env.JWT_SECRET
-    const corsOrigin = process.env.CORS_ORIGIN
-
-    if (isProduction) {
-      if (!jwtSecret) {
-        process.stderr.write(
-          '\n[FATAL] JWT_SECRET no está seteada.\n' +
-          '        El servidor NO puede arrancar en producción sin esta variable.\n' +
-          '        Generar un secreto seguro con:\n' +
-          '          node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"\n' +
-          '        Luego agregar JWT_SECRET=<valor> al archivo .env del servidor.\n\n',
-        )
-        process.exit(1)
-      }
-      if (jwtSecret.length < 32) {
-        process.stderr.write(
-          `\n[FATAL] JWT_SECRET es demasiado corta (${jwtSecret.length} caracteres).\n` +
-          '        Se requieren al menos 32 caracteres para seguridad mínima en producción.\n\n',
-        )
-        process.exit(1)
-      }
-      if (!corsOrigin?.trim()) {
-        process.stderr.write(
-          '\n[FATAL] CORS_ORIGIN no está seteada.\n' +
-          '        Defina el dominio público del frontend para proteger el API en producción.\n\n',
-        )
-        process.exit(1)
-      }
-    } else if (!jwtSecret) {
-      app.log.warn(
-        'JWT_SECRET no está seteada — usando secreto de desarrollo inseguro. ' +
-        'NUNCA usar este modo en producción.',
-      )
-    }
-
-    await registerPlugins()
-
-    // ── Fail-fast schema validation ───────────────────────────────────────────
-    const schemaResult = await checkSchema(app.db)
-    if (!schemaResult.ok) {
-      process.stderr.write(formatSchemaReport(schemaResult))
-      process.stderr.write(
-        '[FATAL] La base de datos está desalineada con el código.\n' +
-        '        Ejecuta las migraciones pendientes y vuelve a arrancar.\n\n',
-      )
-      process.exit(1)
-    }
-    app.log.info(schemaResult.summary)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    await registerRoutes()
+    const instance = await buildApp()
 
     const port = Number(process.env.PORT || 3000)
     const host = process.env.HOST || '127.0.0.1'
 
-    await app.listen({ port, host })
-    app.log.info(`Server listening on http://${host}:${port}`)
+    await instance.listen({ port, host })
+    instance.log.info(`Server listening on http://${host}:${port}`)
 
     closeWithGrace({ delay: 5000 }, async ({ signal, err }) => {
-      if (err) app.log.error(err)
-      app.log.info(`${signal} received, closing server...`)
-      await app.close()
+      if (err) instance.log.error(err)
+      instance.log.info(`${signal} received, closing server...`)
+      await instance.close()
     })
   } catch (error) {
     app.log.error(error)
-    process.exit(1)
+    process.exitCode = 1
   }
 }
 
-start()
+const isEntrypoint = Boolean(
+  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url),
+)
+
+if (isEntrypoint) {
+  void start()
+}

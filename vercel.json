@@ -1,7 +1,14 @@
 {
-  "installCommand": "cd frontend && npm ci",
-  "buildCommand": "cd frontend && npm run build",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci --prefix frontend && npm ci --prefix backend-fastify",
+  "buildCommand": "npm run build --prefix frontend && npm run build --prefix backend-fastify",
   "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/[...path].ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",

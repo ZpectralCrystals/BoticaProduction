@@ -260,15 +260,15 @@ npm run test:coverage       # Con cobertura
 - [x] Seguridad DB backend-only sin grants públicos a `anon`/`authenticated`
 - [x] Backup Supabase post-migración generado
 - [x] Frontend preparado para Vercel
+- [x] Backend Fastify adaptado a Vercel Functions bajo `/api/*`
 - [x] Repo producción publicado en GitHub
 
 ### 🚧 En progreso:
-- [ ] Despliegue backend Fastify en host persistente (Railway/Render/Fly/VPS)
-- [ ] Conectar Vercel frontend con backend público vía `VITE_API_BASE_URL`
-- [ ] Configurar `CORS_ORIGIN` con dominio final de Vercel
+- [ ] Cargar variables Supabase/JWT en Vercel
+- [ ] Validar despliegue serverless Fastify en producción
 - [ ] Rotar contraseña Supabase y actualizar variables del backend
 - [ ] Cambiar credenciales demo/admin antes de entregar producción
-- [ ] Generar `JWT_SECRET` productivo y guardarlo solo en variables del host
+- [ ] Generar `JWT_SECRET` productivo y guardarlo solo en variables Vercel
 - [ ] Ejecutar smoke test contra API pública
 - [ ] Migración completa a Drizzle ORM (desde SQL raw)
 - [ ] Integración completa de Clerk

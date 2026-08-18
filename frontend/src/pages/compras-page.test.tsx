@@ -107,7 +107,7 @@ describe('ComprasPage', () => {
     const user = userEvent.setup()
     render(<ComprasPage />)
 
-    await screen.findByText('0 compra(s) registrada(s)')
+    await waitFor(() => expect(apiGetCompras).toHaveBeenCalledTimes(1))
     await user.click(screen.getByRole('button', { name: 'Nueva compra' }))
 
     const proveedorSelect = getSelectByLabel('Proveedor *')
@@ -119,7 +119,7 @@ describe('ComprasPage', () => {
     await user.selectOptions(proveedorSelect, '10')
     await user.selectOptions(almacenSelect, '3')
     await user.type(screen.getByPlaceholderText('F001-00012345'), 'F001-00012345')
-    await user.click(screen.getByRole('button', { name: '+ Agregar linea' }))
+    await user.click(screen.getByRole('button', { name: 'Agregar linea' }))
 
     const selects = screen.getAllByRole('combobox')
     // 0: proveedor, 1: tipo comprobante, 2: almacén, 3: tipo de pago, 4+: producto
