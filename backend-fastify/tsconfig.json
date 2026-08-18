@@ -27,6 +27,7 @@
     "src/server.ts",
     "src/plugins/auth.ts",
     "src/plugins/db.ts",
+    "src/lib/clerk-proxy-handler.ts",
     "src/routes/appointments.routes.ts",
     "src/routes/audit.routes.ts",
     "src/routes/auth.routes.ts",

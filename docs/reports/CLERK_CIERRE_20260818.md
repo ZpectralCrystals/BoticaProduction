@@ -34,7 +34,7 @@ Usar Clerk como proveedor de identidad sin mover a Clerk la autorización del ER
 - Instancia de producción vinculada a `botica-production.vercel.app`.
 - Variables Clerk cargadas como secretos en Vercel para Production y Preview.
 - `CLERK_AUTHORIZED_PARTIES` restringido a `https://botica-production.vercel.app`.
-- Frontend Clerk productivo conectado mediante proxy seguro `/__clerk`.
+- Frontend Clerk productivo conectado mediante proxy serverless seguro `/__clerk`.
 - Despliegue productivo reconstruido después de cargar las variables.
 - Autenticación principal conservada por DNI como contingencia operativa.
 
