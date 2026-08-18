@@ -753,6 +753,7 @@ export interface ApiUsuarioClerkLinkStatus {
   estado: string
   clerkLinked: boolean
   clerkUserId: string | null
+  clerkEmail: string | null
 }
 export interface ApiClerkUser {
   id: string
@@ -774,6 +775,12 @@ export function apiUnlinkUsuarioClerk(id: string) {
   return requestV1<{ ok: boolean; message: string } & ApiUsuarioClerkLinkStatus>(
     `/usuarios/${id}/clerk-link`,
     { method: 'DELETE' },
+  )
+}
+export function apiUpdateUsuarioClerkEmail(id: string, email: string) {
+  return requestV1<{ ok: boolean; message: string } & ApiUsuarioClerkLinkStatus>(
+    `/usuarios/${id}/clerk-email`,
+    { method: 'PUT', body: JSON.stringify({ email }) },
   )
 }
 export function apiSearchClerkUsers(query: string) {

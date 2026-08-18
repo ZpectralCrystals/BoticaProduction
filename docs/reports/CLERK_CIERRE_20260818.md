@@ -36,6 +36,8 @@ busca el vinculo en `bot_usuarios` y aplica sus propias reglas operativas.
 - Revocación inmediata del JWT ERP al desvincular Clerk.
 - Búsqueda de usuarios Clerk por nombre/correo desde Administración > Usuarios.
 - Validación del usuario Clerk antes de vincular cuando existe `CLERK_SECRET_KEY`.
+- Edición administrativa del correo de acceso desde Administración > Usuarios > Clerk.
+- Al guardar un correo, Clerk lo verifica, lo establece como primario y retira los demás correos de esa identidad.
 - Pruebas de token válido, inválido, sin vínculo y vínculo revocado.
 - Interfaz de acceso localizada al español.
 - Retorno automatico al panel cuando el usuario esta vinculado.
@@ -75,7 +77,7 @@ cuando Clerk la requiera.
 
 ## Primer usuario productivo
 
-- Identidad Clerk creada para `gustavogaldelg@gmail.com`.
+- Identidad Clerk vinculada al usuario administrador ERP.
 - Correo marcado como verificado por Clerk.
 - Usuario vinculado al ERP `ADMINISTRADOR`, DNI `00000000`.
 - Panel de usuarios confirma `1 vinculado(s)`.

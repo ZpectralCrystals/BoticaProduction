@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { KeyRound, Link2, Search, Shield, ShieldCheck, Unlink2, User } from 'lucide-react'
+import { KeyRound, Link2, Mail, Search, Shield, ShieldCheck, Unlink2, User } from 'lucide-react'
 import {
   apiGetUsuarioClerkLink,
   apiGetUsuarios,
   apiLinkUsuarioClerk,
   apiSearchClerkUsers,
   apiUnlinkUsuarioClerk,
+  apiUpdateUsuarioClerkEmail,
   apiUsuarioAction,
 } from '@/lib/api'
 import type { ApiClerkUser, ApiUsuario, ApiUsuarioClerkLinkStatus } from '@/lib/api'
@@ -59,6 +60,8 @@ export function UsuariosPage() {
   const [clerkUserIdInput, setClerkUserIdInput] = useState('')
   const [loadingClerkStatus, setLoadingClerkStatus] = useState(false)
   const [savingClerkStatus, setSavingClerkStatus] = useState(false)
+  const [clerkEmailInput, setClerkEmailInput] = useState('')
+  const [savingClerkEmail, setSavingClerkEmail] = useState(false)
   const [clerkSearchQuery, setClerkSearchQuery] = useState('')
   const [clerkSearchResults, setClerkSearchResults] = useState<ApiClerkUser[]>([])
   const [searchingClerk, setSearchingClerk] = useState(false)
@@ -97,6 +100,7 @@ export function UsuariosPage() {
     setClerkTarget(u)
     setClerkStatus(null)
     setClerkUserIdInput(u.clerkUserId ?? bridge.clerkUserId ?? '')
+    setClerkEmailInput('')
     setClerkSearchQuery(u.nombre)
     setClerkSearchResults([])
     setShowClerkDialog(true)
@@ -105,6 +109,7 @@ export function UsuariosPage() {
       const status = await apiGetUsuarioClerkLink(u.id)
       setClerkStatus(status)
       setClerkUserIdInput(status.clerkUserId ?? bridge.clerkUserId ?? '')
+      setClerkEmailInput(status.clerkEmail ?? '')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo cargar el estado de vínculo Clerk')
     } finally {
@@ -153,6 +158,7 @@ export function UsuariosPage() {
       const status = await apiLinkUsuarioClerk(clerkTarget.id, normalizedClerkUserId)
       setClerkStatus(status)
       setClerkUserIdInput(status.clerkUserId ?? normalizedClerkUserId)
+      setClerkEmailInput(status.clerkEmail ?? '')
       toast.success(status.message || 'Usuario ERP vinculado con Clerk')
       load()
     } catch (e) {
@@ -170,6 +176,7 @@ export function UsuariosPage() {
       const status = await apiUnlinkUsuarioClerk(clerkTarget.id)
       setClerkStatus(status)
       setClerkUserIdInput('')
+      setClerkEmailInput('')
       toast.success(status.message || 'Vínculo Clerk removido')
       load()
     } catch (e) {
@@ -198,13 +205,40 @@ export function UsuariosPage() {
     }
   }
 
+  const handleClerkEmailUpdate = async () => {
+    if (!clerkTarget) return
+    const email = clerkEmailInput.trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error('Ingrese un correo válido')
+      return
+    }
+    const confirmed = window.confirm(
+      `Clerk conservará únicamente ${email} como correo de acceso para ${clerkTarget.nombre}. ¿Desea continuar?`,
+    )
+    if (!confirmed) return
+
+    setSavingClerkEmail(true)
+    try {
+      const status = await apiUpdateUsuarioClerkEmail(clerkTarget.id, email)
+      setClerkStatus(status)
+      setClerkEmailInput(status.clerkEmail ?? email)
+      toast.success(status.message)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo actualizar el correo Clerk')
+    } finally {
+      setSavingClerkEmail(false)
+    }
+  }
+
   const closeClerkDialog = () => {
     setShowClerkDialog(false)
     setClerkTarget(null)
     setClerkStatus(null)
     setClerkUserIdInput('')
+    setClerkEmailInput('')
     setLoadingClerkStatus(false)
     setSavingClerkStatus(false)
+    setSavingClerkEmail(false)
     setClerkSearchQuery('')
     setClerkSearchResults([])
     setSearchingClerk(false)
@@ -229,6 +263,7 @@ export function UsuariosPage() {
     estado: clerkTarget.estado,
     clerkLinked: clerkTarget.clerkLinked,
     clerkUserId: clerkTarget.clerkUserId,
+    clerkEmail: null,
   } : null)
   const canLinkCurrentTarget = clerkStatusForDialog?.estado === 'A'
 
@@ -447,6 +482,36 @@ export function UsuariosPage() {
             </span>
           </label>
 
+          {clerkStatusForDialog?.clerkLinked && (
+            <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+              <label className="block space-y-1">
+                <span className="flex items-center gap-2 text-sm font-semibold text-emerald-950">
+                  <Mail className="h-4 w-4" />
+                  Correo de acceso Clerk
+                </span>
+                <Input
+                  type="email"
+                  value={clerkEmailInput}
+                  onChange={(e) => setClerkEmailInput(e.target.value)}
+                  placeholder="usuario@correo.com"
+                  disabled={savingClerkEmail}
+                />
+              </label>
+              <p className="text-xs text-emerald-900">
+                Al guardar, este correo queda verificado y como único método de acceso por correo. Roles y permisos ERP no cambian.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleClerkEmailUpdate}
+                disabled={savingClerkEmail || loadingClerkStatus || !clerkEmailInput.trim()}
+              >
+                <Mail className="mr-2 h-4 w-4" />
+                {savingClerkEmail ? 'Guardando correo' : 'Guardar correo Clerk'}
+              </Button>
+            </div>
+          )}
+
           {bridge.clerkUserId && (
             <Button
               variant="outline"
@@ -482,7 +547,7 @@ export function UsuariosPage() {
               <Unlink2 className="mr-2 h-4 w-4" />
               Desvincular Clerk
             </Button>
-            <Button type="button" variant="outline" onClick={closeClerkDialog} disabled={savingClerkStatus}>
+            <Button type="button" variant="outline" onClick={closeClerkDialog} disabled={savingClerkStatus || savingClerkEmail}>
               Cerrar
             </Button>
           </div>

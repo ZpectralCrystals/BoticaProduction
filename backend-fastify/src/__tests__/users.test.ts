@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
-import usersRoutes from '../routes/users.routes.js'
+import usersRoutes, { replaceClerkUserEmail, type ClerkEmailAdminClient } from '../routes/users.routes.js'
 import {
   TEST_USER,
   buildTestApp,
@@ -133,6 +133,7 @@ describe('usuarios Clerk link management', () => {
       estado: 'A',
       clerkLinked: true,
       clerkUserId: 'user_2xYabc123',
+      clerkEmail: null,
     })
   })
 
@@ -163,6 +164,44 @@ describe('usuarios Clerk link management', () => {
 
     expect(res.statusCode).toBe(400)
     expect(res.json().message).toBe('clerkUserId es obligatorio')
+  })
+
+  it('rejects invalid Clerk emails before changing external identity', async () => {
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/usuarios/7/clerk-email',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { email: 'correo-invalido' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().message).toBe('Ingrese un correo Clerk válido')
+    expect(mockClient.queries).toHaveLength(0)
+  })
+
+  it('requires Clerk server configuration to edit a linked email', async () => {
+    mockClient.responses.push(
+      { rows: [{ exists: true }] },
+      {
+        rows: [{
+          nid: 7,
+          cnombre: 'Usuario ERP',
+          cnrodni: '12345678',
+          cestado: 'A',
+          cclerk_user_id: 'user_2xYabc123',
+        }],
+      },
+    )
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/usuarios/7/clerk-email',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { email: 'nuevo@example.com' },
+    })
+
+    expect(res.statusCode).toBe(503)
+    expect(res.json().message).toContain('CLERK_SECRET_KEY')
   })
 
   it('rejects linking inactive ERP users', async () => {
@@ -329,5 +368,68 @@ describe('usuarios Clerk link management', () => {
 
     expect(res.statusCode).toBe(403)
     expect(res.json().error).toBe('NO TIENE PERMISOS PARA GESTIONAR USUARIOS')
+  })
+
+  it('promotes an existing Clerk email before removing the old one', async () => {
+    const calls: string[] = []
+    const clerkClient = {
+      users: {
+        getUser: async () => ({
+          banned: false,
+          primaryEmailAddress: { id: 'email_old', emailAddress: 'old@example.com' },
+          emailAddresses: [
+            { id: 'email_old', emailAddress: 'old@example.com' },
+            { id: 'email_new', emailAddress: 'new@example.com' },
+          ],
+        }),
+      },
+      emailAddresses: {
+        createEmailAddress: async () => {
+          throw new Error('No debe crear un correo existente')
+        },
+        updateEmailAddress: async (id: string) => {
+          calls.push(`update:${id}`)
+          return { id, emailAddress: 'new@example.com' }
+        },
+        deleteEmailAddress: async (id: string) => {
+          calls.push(`delete:${id}`)
+        },
+      },
+    } as ClerkEmailAdminClient
+
+    const result = await replaceClerkUserEmail(clerkClient, 'user_123', 'new@example.com')
+
+    expect(calls).toEqual(['update:email_new', 'delete:email_old'])
+    expect(result).toEqual({ email: 'new@example.com', removedEmails: ['old@example.com'] })
+  })
+
+  it('creates the new primary Clerk email before removing previous emails', async () => {
+    const calls: string[] = []
+    const clerkClient = {
+      users: {
+        getUser: async () => ({
+          banned: false,
+          primaryEmailAddress: { id: 'email_old', emailAddress: 'old@example.com' },
+          emailAddresses: [{ id: 'email_old', emailAddress: 'old@example.com' }],
+        }),
+      },
+      emailAddresses: {
+        createEmailAddress: async (params: { emailAddress: string }) => {
+          calls.push(`create:${params.emailAddress}`)
+          return { id: 'email_new', emailAddress: params.emailAddress }
+        },
+        updateEmailAddress: async () => {
+          throw new Error('No debe actualizar un correo inexistente')
+        },
+        deleteEmailAddress: async (id: string) => {
+          calls.push(`delete:${id}`)
+        },
+      },
+    } as ClerkEmailAdminClient
+
+    const result = await replaceClerkUserEmail(clerkClient, 'user_123', 'new@example.com')
+
+    expect(calls).toEqual(['create:new@example.com', 'delete:email_old'])
+    expect(result).toEqual({ email: 'new@example.com', removedEmails: ['old@example.com'] })
   })
 })

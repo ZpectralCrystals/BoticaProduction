@@ -22,6 +22,34 @@ type ClerkLinkStatusRow = {
   cclerk_user_id: string | null
 }
 
+type ClerkEmailAddress = {
+  id: string
+  emailAddress: string
+}
+
+export type ClerkEmailAdminClient = {
+  users: {
+    getUser: (userId: string) => Promise<{
+      banned: boolean
+      emailAddresses: ClerkEmailAddress[]
+      primaryEmailAddress?: ClerkEmailAddress | null
+    }>
+  }
+  emailAddresses: {
+    createEmailAddress: (params: {
+      userId: string
+      emailAddress: string
+      verified: boolean
+      primary: boolean
+    }) => Promise<ClerkEmailAddress>
+    updateEmailAddress: (
+      emailAddressId: string,
+      params: { verified: boolean; primary: boolean },
+    ) => Promise<ClerkEmailAddress>
+    deleteEmailAddress: (emailAddressId: string) => Promise<unknown>
+  }
+}
+
 async function hasClerkUserIdColumn(fastify: FastifyInstance) {
   const result = await fastify.db.query<{ exists: boolean }>(
     `SELECT EXISTS (
@@ -48,7 +76,55 @@ function isValidClerkUserId(value: string) {
   return value.startsWith('user_') && value.length > 5 && value.length <= 255
 }
 
-function buildClerkLinkResponse(row: ClerkLinkStatusRow) {
+export function normalizeClerkEmail(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+export function isValidClerkEmail(value: string) {
+  return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+export async function replaceClerkUserEmail(
+  clerkClient: ClerkEmailAdminClient,
+  clerkUserId: string,
+  email: string,
+) {
+  const clerkUser = await clerkClient.users.getUser(clerkUserId)
+  if (clerkUser.banned) {
+    const error = new Error('No se puede editar el correo de un usuario Clerk bloqueado')
+    Object.assign(error, { statusCode: 400 })
+    throw error
+  }
+
+  const existingEmail = clerkUser.emailAddresses.find(
+    (item) => item.emailAddress.trim().toLowerCase() === email,
+  )
+  const targetEmail = existingEmail
+    ? await clerkClient.emailAddresses.updateEmailAddress(existingEmail.id, {
+        verified: true,
+        primary: true,
+      })
+    : await clerkClient.emailAddresses.createEmailAddress({
+        userId: clerkUserId,
+        emailAddress: email,
+        verified: true,
+        primary: true,
+      })
+
+  const removedEmails: string[] = []
+  for (const currentEmail of clerkUser.emailAddresses) {
+    if (currentEmail.id === targetEmail.id) continue
+    await clerkClient.emailAddresses.deleteEmailAddress(currentEmail.id)
+    removedEmails.push(currentEmail.emailAddress)
+  }
+
+  return {
+    email: targetEmail.emailAddress.trim().toLowerCase(),
+    removedEmails,
+  }
+}
+
+function buildClerkLinkResponse(row: ClerkLinkStatusRow, clerkEmail: string | null = null) {
   const clerkUserId = row.cclerk_user_id?.trim() || null
   return {
     userId: String(row.nid),
@@ -57,6 +133,7 @@ function buildClerkLinkResponse(row: ClerkLinkStatusRow) {
     estado: row.cestado.trim(),
     clerkLinked: Boolean(clerkUserId),
     clerkUserId,
+    clerkEmail,
   }
 }
 
@@ -188,7 +265,93 @@ export default async function usersRoutes(
       return reply.code(404).send({ message: 'Usuario no encontrado' })
     }
 
-    return buildClerkLinkResponse(targetUser)
+    const clerkUserId = targetUser.cclerk_user_id?.trim() || null
+    const clerkClient = clerkClientFromEnv()
+    let clerkEmail: string | null = null
+    if (clerkUserId && clerkClient) {
+      try {
+        const clerkUser = await clerkClient.users.getUser(clerkUserId)
+        clerkEmail = clerkUser.primaryEmailAddress?.emailAddress?.trim().toLowerCase() || null
+      } catch (error) {
+        request.log.warn({ error, clerkUserId }, 'No se pudo consultar el correo primario Clerk')
+      }
+    }
+
+    return buildClerkLinkResponse(targetUser, clerkEmail)
+  })
+
+  fastify.put('/:id/clerk-email', { preHandler: fastify.requireAuth }, async (request, reply) => {
+    const actor = ensureUsersPermission(request, reply)
+    if (!actor) return
+
+    const params = request.params as { id?: string }
+    const body = request.body as { email?: string }
+    const userId = Number(params.id || 0)
+    const email = normalizeClerkEmail(body?.email)
+
+    if (!userId) {
+      return reply.code(400).send({ message: 'El ID del usuario es obligatorio' })
+    }
+    if (!email) {
+      return reply.code(400).send({ message: 'El correo Clerk es obligatorio' })
+    }
+    if (!isValidClerkEmail(email)) {
+      return reply.code(400).send({ message: 'Ingrese un correo Clerk válido' })
+    }
+
+    const { targetUser, hasClerkColumn } = await getUserClerkStatusWithSchema(fastify, userId)
+    if (!targetUser) {
+      return reply.code(404).send({ message: 'Usuario no encontrado' })
+    }
+    if (!hasClerkColumn) {
+      return reply.code(503).send({ message: 'Vinculación Clerk no configurada: falta columna bot_usuarios.cclerk_user_id' })
+    }
+
+    const clerkUserId = targetUser.cclerk_user_id?.trim() || null
+    if (!clerkUserId) {
+      return reply.code(400).send({ message: 'Primero debe vincular el usuario ERP con Clerk' })
+    }
+
+    const clerkClient = clerkClientFromEnv()
+    if (!clerkClient) {
+      return reply.code(503).send({ message: 'Edición Clerk no configurada: falta CLERK_SECRET_KEY' })
+    }
+
+    try {
+      const result = await replaceClerkUserEmail(
+        clerkClient as unknown as ClerkEmailAdminClient,
+        clerkUserId,
+        email,
+      )
+
+      await fastify.db.query(
+        `INSERT INTO bot_auditoria (nusuario_id, cusuario, caccion, ctabla, nregistro_id, cdetalle)
+         VALUES ($1, $2, 'ACTUALIZAR_CORREO_CLERK', 'bot_usuarios', $3, $4)`,
+        [
+          actor.id,
+          actor.nombre,
+          userId,
+          `Correo Clerk actualizado a ${result.email}; correos retirados: ${result.removedEmails.join(', ') || 'ninguno'}`,
+        ],
+      )
+
+      request.log.info(
+        { actorId: actor.id, targetUserId: userId, clerkUserId, email: result.email },
+        'Correo de acceso Clerk actualizado',
+      )
+
+      return {
+        ok: true,
+        message: 'Correo de acceso Clerk actualizado correctamente',
+        ...buildClerkLinkResponse(targetUser, result.email),
+      }
+    } catch (error: any) {
+      request.log.error({ error, clerkUserId, email }, 'No se pudo actualizar el correo Clerk')
+      const status = Number(error?.status || error?.statusCode || 0)
+      return reply.code(status >= 400 && status < 500 ? status : 502).send({
+        message: error?.message || 'No se pudo actualizar el correo en Clerk',
+      })
+    }
   })
 
   fastify.post('/:id/clerk-link', { preHandler: fastify.requireAuth }, async (request, reply) => {
