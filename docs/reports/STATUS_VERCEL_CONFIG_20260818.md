@@ -8,7 +8,9 @@
 - Supabase staging migrado y auditado sin bloqueantes DB.
 - Backend Fastify adaptado como Vercel Function bajo `/api/*`.
 - Dominio productivo detectado: `https://botica-production.vercel.app`.
-- Variables del proyecto Vercel: pendientes de cargar.
+- Variables del proyecto Vercel: configuradas como sensibles para Production y Preview.
+- API pública validada contra Supabase: `HTTP 200`, 64 productos activos.
+- Login, panel e inventario validados desde la interfaz productiva.
 
 ## Cambios aplicados
 
@@ -54,10 +56,19 @@ JWT_SECRET=SECRETO_ALEATORIO_MINIMO_32_CARACTERES
 - Segundo deploy: routing correcto; runtime detectó wrapper CommonJS intentando cargar backend ESM.
 - Corrección posterior: proyecto raíz declarado `type: module`.
 
-## Pendiente para corte
+## Cierre del corte
 
-- Cargar variables secretas en Vercel.
-- Confirmar build serverless posterior al push.
-- Ejecutar smoke API contra dominio productivo.
-- Cambiar clave admin demo en sistema.
-- Rotar password Supabase después del corte y actualizar Vercel en la misma operación.
+- [x] Variables Supabase/JWT cargadas sin exponer valores.
+- [x] Build serverless y redeploy en estado `Ready`.
+- [x] `/api/health` responde `200` con DB conectada.
+- [x] Login JWT y rutas protegidas funcionando.
+- [x] Inventario productivo visible desde Vercel.
+
+## Pendiente operativo, no de programación
+
+- [ ] Cambiar clave admin demo antes de entrega pública.
+- [ ] Rotar password Supabase y actualizar Vercel en la misma operación.
+- [ ] Definir dominio final y monitoreo externo cuando el negocio lo solicite.
+
+Supabase permanece en plan Free. SUNAT, Clerk y servicios externos quedan fuera del
+cierre funcional actual y se evaluarán en otra fase.

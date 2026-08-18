@@ -134,6 +134,8 @@ describe('Caja admin/cajero y anulación de movimientos', () => {
     expect(res.json().cajasAbiertas[0].usuarioId).toBe('2')
     expect(mockClient.queries[0].sql).toContain('AND c.nusuario_id = $1')
     expect(mockClient.queries[1].sql).toContain('OR $2::BOOLEAN = TRUE')
+    expect(mockClient.queries[2].sql).toContain("cestado = 'A'")
+    expect(mockClient.queries[3].sql).toContain("cestado = 'A'")
   })
 
   it('rechaza apertura de caja si usuario no es admin/super', async () => {

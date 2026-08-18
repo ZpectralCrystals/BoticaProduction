@@ -23,6 +23,7 @@ export default async function consistenciaRoutes(
       FROM bot_productos p
       LEFT JOIN bot_lotes l ON l.nproducto_id = p.nid
       WHERE p.cestado = 'A'
+        AND COALESCE(p.lrequiere_lote, TRUE) = TRUE
       GROUP BY p.nid, p.ccodigo, p.cnombre, p.nstock
       HAVING p.nstock != COALESCE(SUM(l.ncantidad) FILTER (WHERE l.cestado = 'ACTIVO'), 0)
          OR COUNT(l.nid) FILTER (WHERE l.nalmacen_id IS NULL AND l.cestado = 'ACTIVO') > 0
@@ -223,10 +224,12 @@ export default async function consistenciaRoutes(
     const { rows: [stockRow] } = await fastify.db.query(`
       SELECT
         COUNT(*) FILTER (
-          WHERE p.nstock != COALESCE(l.stock_lotes, 0)
+          WHERE COALESCE(p.lrequiere_lote, TRUE) = TRUE
+            AND p.nstock != COALESCE(l.stock_lotes, 0)
         )::INT AS stock_vs_lotes,
         COUNT(*) FILTER (
-          WHERE p.nstock > 0 AND COALESCE(l.total_lotes, 0) = 0
+          WHERE COALESCE(p.lrequiere_lote, TRUE) = TRUE
+            AND p.nstock > 0 AND COALESCE(l.total_lotes, 0) = 0
         )::INT AS stock_sin_lotes
       FROM bot_productos p
       LEFT JOIN (
@@ -365,8 +368,29 @@ export default async function consistenciaRoutes(
       FROM bot_productos p
       LEFT JOIN bot_lotes l ON l.nproducto_id = p.nid
       WHERE p.cestado = 'A'
+        AND COALESCE(p.lrequiere_lote, TRUE) = TRUE
       GROUP BY p.nid, p.ccodigo, p.cnombre, p.nstock
       HAVING p.nstock != COALESCE(SUM(l.ncantidad) FILTER (WHERE l.cestado = 'ACTIVO'), 0)
+    `)
+
+    const { rows: kardexRows } = await fastify.db.query(`
+      WITH ultimo AS (
+        SELECT DISTINCT ON (nproducto_id)
+          nproducto_id, nstock_nuevo
+        FROM bot_kardex
+        ORDER BY nproducto_id, nid DESC
+      )
+      SELECT
+        p.nid AS producto_id,
+        p.ccodigo AS producto_codigo,
+        p.cnombre AS producto_nombre,
+        u.nstock_nuevo AS stock_kardex,
+        p.nstock AS stock_actual
+      FROM ultimo u
+      JOIN bot_productos p ON p.nid = u.nproducto_id
+      WHERE p.cestado = 'A'
+        AND p.nstock != u.nstock_nuevo
+      ORDER BY p.nid
     `)
 
     const correcciones = rows.map((r: any) => ({
@@ -378,7 +402,18 @@ export default async function consistenciaRoutes(
       diferencia: Number(r.stock_correcto) - Number(r.stock_actual),
     }))
 
-    if (!dryRun && correcciones.length > 0) {
+    const productosConStockCorregido = new Set(correcciones.map((corr) => corr.productoId))
+    const alineacionesKardex = kardexRows
+      .filter((r: any) => !productosConStockCorregido.has(Number(r.producto_id)))
+      .map((r: any) => ({
+        productoId: Number(r.producto_id),
+        productoCodigo: r.producto_codigo?.trim(),
+        productoNombre: r.producto_nombre?.trim(),
+        stockKardex: Number(r.stock_kardex),
+        stockActual: Number(r.stock_actual),
+      }))
+
+    if (!dryRun && (correcciones.length > 0 || alineacionesKardex.length > 0)) {
       const client = await fastify.db.connect()
       try {
         await client.query('BEGIN')
@@ -403,10 +438,30 @@ export default async function consistenciaRoutes(
             ],
           )
         }
+        for (const alineacion of alineacionesKardex) {
+          await client.query(
+            `INSERT INTO bot_kardex
+             (nproducto_id, ctipo, cref_tabla, nref_id, ncantidad,
+              nstock_anterior, nstock_nuevo, cdetalle, nusuario_id, cusuario)
+             VALUES ($1, 'RECONCILIACION_KARDEX', 'bot_productos', $1, 0, $2, $3, $4, $5, $6)`,
+            [
+              alineacion.productoId,
+              alineacion.stockKardex,
+              alineacion.stockActual,
+              `Alineación de Kardex: ${alineacion.stockKardex} → ${alineacion.stockActual}`,
+              user.id,
+              user.nombre,
+            ],
+          )
+        }
         await client.query(
           `INSERT INTO bot_auditoria (nusuario_id, cusuario, caccion, ctabla, cdetalle)
            VALUES ($1, $2, 'RECONCILIACION', 'bot_productos', $3)`,
-          [user.id, user.nombre, `Reconciliados ${correcciones.length} productos`],
+          [
+            user.id,
+            user.nombre,
+            `Stock corregido: ${correcciones.length}; Kardex alineado: ${alineacionesKardex.length}`,
+          ],
         )
         await client.query('COMMIT')
       } catch (error) {
@@ -420,8 +475,11 @@ export default async function consistenciaRoutes(
     return {
       success: true,
       dryRun,
-      totalCorregidos: correcciones.length,
+      totalCorregidos: correcciones.length + alineacionesKardex.length,
+      totalStockCorregido: correcciones.length,
+      totalKardexAlineado: alineacionesKardex.length,
       correcciones,
+      alineacionesKardex,
     }
   })
 
@@ -576,7 +634,9 @@ export default async function consistenciaRoutes(
              p.nstock
       FROM bot_productos p
       LEFT JOIN bot_lotes l ON l.nproducto_id = p.nid AND l.cestado = 'ACTIVO' AND l.ncantidad > 0
-      WHERE p.cestado = 'A' AND p.nstock > 0 AND l.nid IS NULL
+      WHERE p.cestado = 'A'
+        AND COALESCE(p.lrequiere_lote, TRUE) = TRUE
+        AND p.nstock > 0 AND l.nid IS NULL
       ORDER BY p.nstock DESC
     `)
 

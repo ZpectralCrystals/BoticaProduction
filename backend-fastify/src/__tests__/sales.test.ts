@@ -228,6 +228,43 @@ describe('POST /api/v1/ventas', () => {
     expect(res.json().error).toBe('TOTAL INVALIDO')
   })
 
+  it('❌ rechaza venta sin detalle', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/ventas',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { ...BASE_BODY, items: [] },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('VENTA SIN DETALLE')
+  })
+
+  it('❌ rechaza total que no coincide con el detalle', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/ventas',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { ...BASE_BODY, total: 1 },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('TOTAL NO COINCIDE CON DETALLE')
+    expect(mockClient.queries).toHaveLength(0)
+  })
+
+  it('❌ rechaza subtotal de item manipulado', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/ventas',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { ...BASE_BODY, items: [{ ...BASE_ITEM, total: 1 }] },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('SUBTOTAL DE ITEM INVALIDO')
+  })
+
   it('❌ rechaza sin token de autenticación', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -314,7 +351,7 @@ describe('POST /api/v1/ventas', () => {
       method: 'POST',
       url: '/api/v1/ventas',
       headers: { Authorization: `Bearer ${token}` },
-      payload: { ...BASE_BODY, items: [{ ...BASE_ITEM, cantidad: 5 }] },
+      payload: { ...BASE_BODY, total: 125, items: [{ ...BASE_ITEM, cantidad: 5, total: 125 }] },
     })
 
     expect(res.statusCode).toBe(400)
@@ -335,7 +372,7 @@ describe('POST /api/v1/ventas', () => {
       method: 'POST',
       url: '/api/v1/ventas',
       headers: { Authorization: `Bearer ${token}` },
-      payload: { ...BASE_BODY, items: [{ ...BASE_ITEM, precioUnitario: 27, total: 54 }] },
+      payload: { ...BASE_BODY, total: 54, items: [{ ...BASE_ITEM, precioUnitario: 27, total: 54 }] },
     })
 
     expect(res.statusCode).toBe(400)
@@ -399,7 +436,7 @@ describe('POST /api/v1/ventas', () => {
       method: 'POST',
       url: '/api/v1/ventas',
       headers: { Authorization: `Bearer ${token}` },
-      payload: { ...BASE_BODY, items: [{ ...BASE_ITEM, cantidad: 5 }] },
+      payload: { ...BASE_BODY, total: 125, items: [{ ...BASE_ITEM, cantidad: 5, total: 125 }] },
     })
 
     expect(res.statusCode).toBe(400)
@@ -452,6 +489,33 @@ describe('POST /api/v1/ventas', () => {
     const params = (kardexInsertPayload as unknown) as unknown[]
     expect(Number(params[2])).toBe(-2)
     expect(Number(params[4])).toBe(Number(params[3]) + Number(params[2]))
+  })
+
+  it('✅ kardex FEFO conserva saldo global, no saldo aislado del lote', async () => {
+    const kardexPayloads: unknown[][] = []
+    const originalQuery = mockClient.query.bind(mockClient)
+    mockClient.query = async function (sql: string, params?: unknown[]) {
+      if (sql.includes('bot_kardex') && sql.includes("'VENTA'")) {
+        kardexPayloads.push(params ?? [])
+      }
+      return originalQuery(sql, params)
+    }
+    seedVentaOK(150, [
+      { nid: 10, ccodigo_lote: 'L-001', dfechavencimiento: '2027-01-01', ncantidad: 1 },
+      { nid: 11, ccodigo_lote: 'L-002', dfechavencimiento: '2027-02-01', ncantidad: 20 },
+    ])
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/ventas',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: BASE_BODY,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(kardexPayloads).toHaveLength(2)
+    expect(kardexPayloads[0].slice(5, 7)).toEqual([150, 149])
+    expect(kardexPayloads[1].slice(5, 7)).toEqual([149, 148])
   })
 })
 
@@ -511,14 +575,13 @@ describe('PATCH /api/v1/ventas/:id/anular', () => {
       { rows: [{ nid: 7, ccodigo: 'VTA-20260411-0007', cestado: 'A', nalmacen_id: 1 }] },   // SELECT bot_ventas
       { rows: [{ nproducto_id: 1, ncantidad: 3, cdescripcion: 'Paracetamol 500mg' }] }, // SELECT bot_ventas_det
       // SELECT bot_kardex FEFO — hay un lote consumido
-      { rows: [{ nlote_id: 10, ncantidad_abs: 3, ccodigo_lote: 'LOTE-001', nproducto_id: 1 }] },
+      { rows: [{ kardex_id: 40, nlote_id: 10, ncantidad_abs: 3, ccodigo_lote: 'LOTE-001', nproducto_id: 1 }] },
       { rows: [] },                      // UPDATE bot_ventas cestado='C'
       { rows: [{ nstock: 17 }] },        // SELECT bot_productos FOR UPDATE
       { rows: [] },                      // UPDATE bot_productos (+3 revertido)
       // FEFO loop — lote 10
       { rows: [{ ncantidad: 0 }] },      // SELECT bot_lotes WHERE nid=10 FOR UPDATE
       { rows: [] },                      // UPDATE bot_lotes ncantidad=3, cestado='ACTIVO'
-      { rows: [{ nstock_nuevo: 17 }] },  // SELECT last stock from kardex for this lote
       { rows: [] },                      // INSERT bot_kardex ANULACION_VENTA con lote
       { rows: [] },                      // INSERT bot_movimientos_almacen (revert)
       { rows: [] },                      // INSERT bot_auditoria
@@ -535,6 +598,11 @@ describe('PATCH /api/v1/ventas/:id/anular', () => {
     const json = res.json()
     expect(json.ok).toBe(true)
     expect(json.codigo).toBe('VTA-20260411-0007')
+
+    const kardexQuery = mockClient.queries.find((query) => (
+      query.sql.includes('INSERT INTO bot_kardex') && query.sql.includes('ANULACION_VENTA')
+    ))
+    expect(kardexQuery?.params?.slice(5, 7)).toEqual([17, 20])
 
     // Verificar que efectivamente se procesaron las queries de lote
     // (el mock vació todas las respuestas = todas las queries se ejecutaron)

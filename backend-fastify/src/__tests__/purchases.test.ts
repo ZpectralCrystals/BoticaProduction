@@ -404,6 +404,47 @@ describe('POST /api/v1/compras', () => {
     expect(res.json().message).toBe('Debe ingresar el número de comprobante')
   })
 
+  it('❌ rechaza cantidades fraccionarias de inventario', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/compras',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { ...BASE_BODY, items: [{ ...BASE_ITEM, cantidad: 1.5 }] },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().message).toBe('La cantidad de cada producto debe ser mayor a 0')
+    expect(mockClient.queries).toHaveLength(0)
+  })
+
+  it('❌ informa comprobante duplicado protegido por índice único', async () => {
+    const originalQuery = mockClient.query.bind(mockClient)
+    mockClient.query = async (sql: string, params?: unknown[]) => {
+      if (sql.includes('INSERT INTO bot_compras')) {
+        throw Object.assign(new Error('duplicate key value violates unique constraint'), {
+          code: '23505',
+          constraint: 'uq_bot_compras_proveedor_comprobante',
+        })
+      }
+      return originalQuery(sql, params)
+    }
+    seedCompraOK()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/compras',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: BASE_BODY,
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toEqual({
+      error: 'COMPROBANTE_DUPLICADO',
+      message: 'Este comprobante ya fue registrado para el proveedor',
+    })
+    expect(mockClient.queries.at(-1)?.sql).toBe('ROLLBACK')
+  })
+
   it('❌ rechaza compra a crédito sin fecha de vencimiento', async () => {
     const res = await app.inject({
       method: 'POST',

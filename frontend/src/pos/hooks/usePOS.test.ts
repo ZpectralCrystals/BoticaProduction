@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { usePOS } from './usePOS'
 
 vi.mock('@/lib/api', () => ({
@@ -222,8 +222,9 @@ describe('usePOS.updateQuantity', () => {
 // ── calcularTotales / totals ───────────────────────────────
 
 describe('usePOS totales', () => {
-  it('total es 0 con carrito vacío', () => {
+  it('total es 0 con carrito vacío', async () => {
     const { result } = renderHook(() => usePOS())
+    await waitFor(() => expect(result.current.almacenes).toHaveLength(1))
     expect(result.current.total).toBe(0)
   })
 

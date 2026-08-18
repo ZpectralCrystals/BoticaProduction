@@ -62,12 +62,14 @@ export default async function cajaRoutes(
       fastify.db.query<{ total: string; n: string }>(
         `SELECT COALESCE(SUM(ntotal), 0)::text AS total, COUNT(*)::text AS n
          FROM bot_ventas
-         WHERE tcreado::DATE = CURRENT_DATE`,
+         WHERE tcreado::DATE = CURRENT_DATE
+           AND cestado = 'A'`,
       ),
       fastify.db.query<{ cmetpago: string | null; total: string }>(
         `SELECT cmetpago, COALESCE(SUM(ntotal), 0)::text AS total
          FROM bot_ventas
          WHERE tcreado::DATE = CURRENT_DATE
+           AND cestado = 'A'
          GROUP BY cmetpago`,
       ),
       fastify.db.query<{

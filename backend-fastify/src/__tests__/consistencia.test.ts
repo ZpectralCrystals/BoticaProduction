@@ -104,6 +104,7 @@ describe('GET /api/v1/consistencia/stock', () => {
     const body = res.json()
     expect(body.success).toBe(true)
     expect(body.totalInconsistencias).toBe(0)
+    expect(mockClient.queries[0].sql).toContain('COALESCE(p.lrequiere_lote, TRUE) = TRUE')
   })
 
   it('returns inconsistencies when stock differs from lotes', async () => {
@@ -201,6 +202,7 @@ describe('POST /api/v1/consistencia/reconciliar', () => {
         stock_actual: 50, stock_correcto: 30,
       }],
     })
+    mockClient.responses.push({ rows: [] })
 
     const res = await app.inject({
       method: 'POST',
@@ -215,5 +217,70 @@ describe('POST /api/v1/consistencia/reconciliar', () => {
     expect(body.totalCorregidos).toBe(1)
     expect(body.correcciones[0].stockAnterior).toBe(50)
     expect(body.correcciones[0].stockCorrecto).toBe(30)
+    expect(mockClient.queries[0].sql).toContain('COALESCE(p.lrequiere_lote, TRUE) = TRUE')
+  })
+
+  it('detecta desajuste exclusivo de Kardex sin alterar stock', async () => {
+    mockClient.responses.push(
+      { rows: [] },
+      {
+        rows: [{
+          producto_id: 7,
+          producto_codigo: 'MED-007',
+          producto_nombre: 'Producto FEFO',
+          stock_kardex: 3,
+          stock_actual: 6,
+        }],
+      },
+    )
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/consistencia/reconciliar',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { dryRun: true },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      dryRun: true,
+      totalCorregidos: 1,
+      totalStockCorregido: 0,
+      totalKardexAlineado: 1,
+      correcciones: [],
+      alineacionesKardex: [{ productoId: 7, stockKardex: 3, stockActual: 6 }],
+    })
+    expect(mockClient.queries.some((query) => query.sql.includes('UPDATE bot_productos'))).toBe(false)
+  })
+
+  it('aplica alineación Kardex con movimiento cero auditable', async () => {
+    mockClient.responses.push(
+      { rows: [] },
+      {
+        rows: [{
+          producto_id: 7,
+          producto_codigo: 'MED-007',
+          producto_nombre: 'Producto FEFO',
+          stock_kardex: 3,
+          stock_actual: 6,
+        }],
+      },
+      { rows: [] },
+      { rows: [] },
+    )
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/consistencia/reconciliar',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { dryRun: false },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().totalKardexAlineado).toBe(1)
+    const insert = mockClient.queries.find((query) => query.sql.includes('RECONCILIACION_KARDEX'))
+    expect(insert?.params?.slice(0, 3)).toEqual([7, 3, 6])
+    expect(mockClient.queries.some((query) => query.sql.includes('UPDATE bot_productos'))).toBe(false)
+    expect(mockClient.queries.at(-1)?.sql).toBe('COMMIT')
   })
 })

@@ -259,10 +259,10 @@ export default async function purchasesRoutes(
       if (fVenc && !isValidDateOnly(fVenc)) {
         return reply.code(400).send({ message: 'La fecha de vencimiento debe tener formato YYYY-MM-DD válido' })
       }
-      if (cantidad <= 0) {
+      if (!Number.isInteger(cantidad) || cantidad <= 0) {
         return reply.code(400).send({ message: 'La cantidad de cada producto debe ser mayor a 0' })
       }
-      if (precioUnit < 0) {
+      if (!Number.isFinite(precioUnit) || precioUnit < 0) {
         return reply.code(400).send({ message: 'El precio unitario no puede ser negativo' })
       }
     }
@@ -540,6 +540,19 @@ export default async function purchasesRoutes(
       return { ok: true, id: String(compraId), codigo, total }
     } catch (error) {
       await client.query('ROLLBACK')
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error as { code?: string }).code === '23505' &&
+        'constraint' in error &&
+        (error as { constraint?: string }).constraint === 'uq_bot_compras_proveedor_comprobante'
+      ) {
+        return reply.code(409).send({
+          error: 'COMPROBANTE_DUPLICADO',
+          message: 'Este comprobante ya fue registrado para el proveedor',
+        })
+      }
       if (
         error &&
         typeof error === 'object' &&

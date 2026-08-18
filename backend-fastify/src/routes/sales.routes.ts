@@ -160,11 +160,53 @@ export default async function salesRoutes(
     const notes = String(body.notes || body.observaciones || '').trim()
     const items = Array.isArray(body.items) ? body.items : []
 
-    if (total <= 0) {
+    if (!Number.isFinite(total) || total <= 0) {
       return reply.code(400).send({ 
         ok: false,
         error: 'TOTAL INVALIDO' 
       })
+    }
+
+    if (items.length === 0) {
+      return reply.code(400).send({ ok: false, error: 'VENTA SIN DETALLE' })
+    }
+
+    const productIds = new Set<number>()
+    let calculatedTotalCents = 0
+    for (const item of items) {
+      const cantidad = Number(item.cantidadUnidades ?? item.cantidad ?? 0)
+      const precioUnitario = Number(item.precioUnitario ?? 0)
+      const subtotalCalculadoCents = moneyCents(cantidad * precioUnitario)
+      const subtotalDeclarado = item.total === undefined ? cantidad * precioUnitario : Number(item.total)
+
+      if (!Number.isInteger(cantidad) || cantidad <= 0) {
+        return reply.code(400).send({ ok: false, error: 'CANTIDAD DE ITEM INVALIDA' })
+      }
+      if (!Number.isFinite(precioUnitario) || precioUnitario <= 0) {
+        return reply.code(400).send({ ok: false, error: 'PRECIO DE ITEM INVALIDO' })
+      }
+      if (!Number.isFinite(subtotalDeclarado) || moneyCents(subtotalDeclarado) !== subtotalCalculadoCents) {
+        return reply.code(400).send({ ok: false, error: 'SUBTOTAL DE ITEM INVALIDO' })
+      }
+
+      if (item.productoId !== undefined && item.productoId !== null) {
+        const productoId = Number(item.productoId)
+        if (!Number.isInteger(productoId) || productoId <= 0) {
+          return reply.code(400).send({ ok: false, error: 'PRODUCTO DE ITEM INVALIDO' })
+        }
+        if (productIds.has(productoId)) {
+          return reply.code(400).send({ ok: false, error: 'PRODUCTO DUPLICADO EN DETALLE' })
+        }
+        productIds.add(productoId)
+      } else if (!String(item.productoNombre || '').trim()) {
+        return reply.code(400).send({ ok: false, error: 'DESCRIPCION DE SERVICIO OBLIGATORIA' })
+      }
+
+      calculatedTotalCents += subtotalCalculadoCents
+    }
+
+    if (moneyCents(total) !== calculatedTotalCents) {
+      return reply.code(400).send({ ok: false, error: 'TOTAL NO COINCIDE CON DETALLE' })
     }
 
     const efectivoInput = parseMoneyField(body.montoEfectivo, 'montoEfectivo')
@@ -346,12 +388,10 @@ export default async function salesRoutes(
         const saleId = saleInsert.rows[0].nid
 
         for (const item of items) {
-          const cantidad = Number(item.cantidadUnidades || item.cantidad || 1)
-          const precioUnitario = Number(item.precioUnitario || 0)
-          const subtotalItem = Number(item.total || cantidad * precioUnitario)
+          const cantidad = Number(item.cantidadUnidades ?? item.cantidad)
+          const precioUnitario = Number(item.precioUnitario)
+          const subtotalItem = Math.round(cantidad * precioUnitario * 100) / 100
           const nombreProducto = String(item.productoNombre || 'Producto').trim()
-
-          if (cantidad <= 0 || precioUnitario < 0) continue
 
           if (!item.productoId) {
             await client.query(
@@ -436,7 +476,7 @@ export default async function salesRoutes(
           const tieneLottes = lotesResult.rows.length > 0
           const requiereLote = prod.lrequiere_lote !== false
 
-          type LoteConsumo = { loteId: number; codigoLote: string; consumir: number; stockLote: number }
+          type LoteConsumo = { loteId: number; codigoLote: string; consumir: number }
           const lotesPorConsumir: LoteConsumo[] = []
 
           if (tieneLottes) {
@@ -457,7 +497,6 @@ export default async function salesRoutes(
                 loteId: lote.nid,
                 codigoLote: lote.ccodigo_lote || 'SIN-LOTE',
                 consumir,
-                stockLote: Number(lote.ncantidad),
               })
             }
           } else {
@@ -501,7 +540,9 @@ export default async function salesRoutes(
 
           // ── 5a. Con lotes FEFO: descontar cada lote + kardex por lote
           if (tieneLottes && lotesPorConsumir.length > 0) {
+            let stockProductoActual = stockAnteriorItem
             for (const lc of lotesPorConsumir) {
+              const stockProductoNuevo = stockProductoActual - lc.consumir
               await client.query(
                 `UPDATE bot_lotes
                  SET ncantidad = ncantidad - $1,
@@ -519,13 +560,14 @@ export default async function salesRoutes(
                 [
                   productoId, lc.loteId, lc.codigoLote, saleId,
                   -lc.consumir,
-                  lc.stockLote,
-                  lc.stockLote - lc.consumir,
+                  stockProductoActual,
+                  stockProductoNuevo,
                   `${nombreProducto} [Lote ${lc.codigoLote}]`,
                   user.id, user.nombre,
                   almacenId || null,
                 ],
               )
+              stockProductoActual = stockProductoNuevo
             }
           } else {
             // ── 5b. Sin lotes: kardex a nivel producto (compatible) ─
@@ -651,11 +693,14 @@ export default async function salesRoutes(
            WHERE cref_tabla = 'bot_ventas'
              AND nref_id    = $1
              AND ctipo      = 'VENTA'
-             AND nlote_id IS NOT NULL`,
+             AND nlote_id IS NOT NULL
+           ORDER BY nid ASC`,
           [saleId],
         )
 
         await client.query(`UPDATE bot_ventas SET cestado = 'C' WHERE nid = $1`, [saleId])
+
+        const stockInicialPorProducto = new Map<number, number>()
 
         // ── Revertir stock de bot_productos ──────────────────────────────
         for (const det of detalleResult.rows) {
@@ -667,7 +712,13 @@ export default async function salesRoutes(
             'SELECT nstock FROM bot_productos WHERE nid = $1 FOR UPDATE',
             [det.nproducto_id],
           )
-          const stockActual = Number(stockResult.rows[0]?.nstock ?? 0)
+          if (!stockResult.rows[0]) {
+            throw new Error(`Producto ID ${det.nproducto_id} no encontrado al anular venta`)
+          }
+          const stockActual = Number(stockResult.rows[0].nstock)
+          if (!stockInicialPorProducto.has(det.nproducto_id)) {
+            stockInicialPorProducto.set(det.nproducto_id, stockActual)
+          }
 
           await client.query(
             'UPDATE bot_productos SET nstock = nstock + $1, tmodifi = NOW() WHERE nid = $2',
@@ -717,14 +768,12 @@ export default async function salesRoutes(
             [cantidadLoteNueva, lote.nlote_id],
           )
 
-          // Stock anterior para el kardex: buscamos el último kardex del producto
-          const lastStockResult = await client.query<{ nstock_nuevo: number }>(
-            `SELECT nstock_nuevo FROM bot_kardex
-             WHERE nproducto_id = $1 AND ctipo = 'VENTA' AND nref_id = $2 AND nlote_id = $3
-             ORDER BY nid DESC LIMIT 1`,
-            [lote.nproducto_id, saleId, lote.nlote_id],
-          )
-          const stockAnteriorLote = Number(lastStockResult.rows[0]?.nstock_nuevo ?? 0)
+          const stockAnteriorProducto = stockInicialPorProducto.get(lote.nproducto_id)
+          if (stockAnteriorProducto === undefined) {
+            throw new Error(`Stock inicial no encontrado para producto ID ${lote.nproducto_id}`)
+          }
+          const stockNuevoProducto = stockAnteriorProducto + lote.ncantidad_abs
+          stockInicialPorProducto.set(lote.nproducto_id, stockNuevoProducto)
 
           await client.query(
             `INSERT INTO bot_kardex
@@ -738,8 +787,8 @@ export default async function salesRoutes(
               lote.ccodigo_lote,
               saleId,
               lote.ncantidad_abs,
-              stockAnteriorLote,
-              stockAnteriorLote + lote.ncantidad_abs,
+              stockAnteriorProducto,
+              stockNuevoProducto,
               `Anulación ${venta.ccodigo} [Lote ${lote.ccodigo_lote}]: ${motivo}`,
               user.id,
               user.nombre,
