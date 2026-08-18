@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify'
 import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
 import jwt from '@fastify/jwt'
@@ -182,7 +182,7 @@ async function registerRoutes() {
     }
   }
 
-  app.get('/health/live', async (_request, reply) => {
+  const livenessHandler = async (_request: unknown, reply: FastifyReply) => {
     return reply.code(200).send({
       status: 'ok',
       check: 'liveness',
@@ -190,17 +190,19 @@ async function registerRoutes() {
       timestamp: new Date().toISOString(),
       uptimeSec: Math.round(process.uptime()),
     })
-  })
+  }
 
-  app.get('/health/ready', async (_request, reply) => {
+  const readinessHandler = async (_request: unknown, reply: FastifyReply) => {
     const readiness = await buildReadinessPayload()
     return reply.code(readiness.statusCode).send(readiness.payload)
-  })
+  }
 
-  app.get('/health', async (_request, reply) => {
-    const readiness = await buildReadinessPayload()
-    return reply.code(readiness.statusCode).send(readiness.payload)
-  })
+  app.get('/health/live', livenessHandler)
+  app.get('/health/ready', readinessHandler)
+  app.get('/health', readinessHandler)
+  app.get('/api/health/live', livenessHandler)
+  app.get('/api/health/ready', readinessHandler)
+  app.get('/api/health', readinessHandler)
 
   await app.register(
     async (instance) => {

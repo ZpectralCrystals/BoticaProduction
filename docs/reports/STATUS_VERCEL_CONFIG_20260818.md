@@ -14,6 +14,7 @@
 
 - `vercel.json` instala y compila frontend + backend.
 - `api/[...path].ts` entrega todas las rutas API a Fastify.
+- Rewrite `/api/:path*` resuelve explícitamente hacia la Function antes del fallback SPA.
 - `backend-fastify/src/server.ts` permite arranque persistente y serverless.
 - `backend-fastify/src/plugins/db.ts` acepta variables Botica o `DATABASE_URL`/`POSTGRES_URL`.
 - `frontend/src/lib/api.ts` ahora soporta `VITE_API_BASE_URL`.
@@ -45,7 +46,8 @@ JWT_SECRET=SECRETO_ALEATORIO_MINIMO_32_CARACTERES
 - Frontend: build, lint y 56/56 tests OK.
 - Handler Vercel importado localmente sin errores.
 - API local + Supabase: `/health/ready` 200, 64 productos activos.
-- Produccion actual: frontend 200, login 405 porque deploy aun no incluye Function.
+- Primer deploy serverless: Function creada, pero rewrite SPA todavía devolvía 405.
+- Corrección posterior: prioridad explícita de `/api/*` y health público en `/api/health`.
 
 ## Pendiente para corte
 
