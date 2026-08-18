@@ -1,4 +1,5 @@
-const API_V1_BASE = '/api/v1'
+const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim()
+const API_V1_BASE = configuredApiBase ? configuredApiBase.replace(/\/$/, '') : '/api/v1'
 const FASTIFY_TOKEN_KEY = 'botica_fastify_token'
 
 async function requestV1<T>(path: string, options?: RequestInit): Promise<T> {
