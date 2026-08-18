@@ -10,8 +10,13 @@ import { ClerkProvider } from '@clerk/clerk-react'
 // ══════════════════════════════════════════════════════════════════════════════
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined
+const CLERK_PROXY_URL = resolveClerkProxyUrl(CLERK_KEY)
 
 export const CLERK_ENABLED = Boolean(CLERK_KEY)
+
+export function resolveClerkProxyUrl(publishableKey: string | undefined) {
+  return publishableKey?.startsWith('pk_live_') ? '/__clerk' : undefined
+}
 
 export function ClerkProviderWrapper({ children }: PropsWithChildren) {
   if (!CLERK_KEY) {
@@ -19,7 +24,7 @@ export function ClerkProviderWrapper({ children }: PropsWithChildren) {
   }
 
   return (
-    <ClerkProvider publishableKey={CLERK_KEY}>
+    <ClerkProvider publishableKey={CLERK_KEY} proxyUrl={CLERK_PROXY_URL}>
       {children}
     </ClerkProvider>
   )
