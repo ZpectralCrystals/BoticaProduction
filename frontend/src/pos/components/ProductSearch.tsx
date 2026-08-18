@@ -1,8 +1,8 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Search, Package, Clock, AlertTriangle, Plus, Loader2 } from 'lucide-react'
 import { apiPOSBuscarProductos, type ApiPOSProduct } from '@/lib/api'
 import { formatCurrency } from '@/lib/utils'
-import { debounce, diasHastaVencimiento, getVencimientoColorClass, getVencimientoText } from '../utils/posUtils'
+import { diasHastaVencimiento, getVencimientoColorClass, getVencimientoText } from '../utils/posUtils'
 
 interface ProductSearchProps {
   onProductSelect: (product: ApiPOSProduct) => void
@@ -23,31 +23,28 @@ export function ProductSearch({ onProductSelect }: ProductSearchProps) {
   const [hasSearched, setHasSearched] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const debouncedSearch = useCallback(
-    debounce(async (term: string) => {
-      if (term.trim().length < 2) {
-        setResults([])
-        setHasSearched(false)
-        return
-      }
+  useEffect(() => {
+    if (searchTerm.trim().length < 2) return
+
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
       setIsLoading(true)
       setHasSearched(true)
       try {
-        const res = await apiPOSBuscarProductos(term)
-        setResults(res.success ? res.data : [])
+        const res = await apiPOSBuscarProductos(searchTerm)
+        if (!cancelled) setResults(res.success ? res.data : [])
       } catch {
-        setResults([])
+        if (!cancelled) setResults([])
       } finally {
-        setIsLoading(false)
+        if (!cancelled) setIsLoading(false)
       }
-    }, 300),
-    [],
-  )
+    }, 300)
 
-  useEffect(() => {
-    debouncedSearch(searchTerm)
-  }, [searchTerm, debouncedSearch])
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [searchTerm])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -81,7 +78,15 @@ export function ProductSearch({ onProductSelect }: ProductSearchProps) {
           ref={inputRef}
           type="text"
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={(e) => {
+            const term = e.target.value
+            setSearchTerm(term)
+            if (term.trim().length < 2) {
+              setResults([])
+              setHasSearched(false)
+              setIsLoading(false)
+            }
+          }}
           placeholder="Buscar medicamento… (F2 para enfocar)"
           autoComplete="off"
           className="w-full h-12 pl-12 pr-4 text-base border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"

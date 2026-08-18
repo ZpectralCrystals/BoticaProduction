@@ -47,6 +47,8 @@ JWT_SECRET=SECRETO_ALEATORIO_MINIMO_32_CARACTERES
 - Frontend: build, lint y 56/56 tests OK.
 - Handler Vercel importado localmente sin errores.
 - API local + Supabase: `/health/ready` 200, 64 productos activos.
+- Auditoría npm productiva: frontend 0, backend 0 vulnerabilidades.
+- Pruebas finales: backend 133/133, frontend 56/56; build y lint OK.
 - Primer deploy serverless: Function creada, pero rewrite SPA todavía devolvía 405.
 - Corrección posterior: prioridad explícita de `/api/*` y health público en `/api/health`.
 - Segundo deploy: routing correcto; runtime detectó wrapper CommonJS intentando cargar backend ESM.

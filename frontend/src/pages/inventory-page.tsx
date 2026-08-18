@@ -35,6 +35,8 @@ const emptyCatalogForm = {
   familyId: '',
 }
 
+const INITIAL_NOW_MS = Date.now()
+
 interface ProductComponentForm {
   componentId: string
   concentracion: string
@@ -72,8 +74,8 @@ function normalizeName(value: string) {
   return value.trim().toLowerCase()
 }
 
-function resolveState(item: ApiInventoryItem) {
-  const exp = item.expiresAt ? Math.ceil((new Date(item.expiresAt).getTime() - Date.now()) / 86400000) : 999
+function resolveState(item: ApiInventoryItem, nowMs: number) {
+  const exp = item.expiresAt ? Math.ceil((new Date(item.expiresAt).getTime() - nowMs) / 86400000) : 999
   if (exp <= 45) return { label: 'Por vencer', variant: 'warning' as const }
   if (item.stock <= item.minStock) return { label: 'Stock bajo', variant: 'danger' as const }
   return { label: 'Estable', variant: 'success' as const }
@@ -101,6 +103,7 @@ function loteColor(dias: number) {
 }
 
 export function InventoryPage() {
+  const [nowMs, setNowMs] = useState(INITIAL_NOW_MS)
   const navigate = useNavigate()
   const [tab, setTab] = useState<'productos' | 'familias' | 'categorias' | 'componentes' | 'distribucion'>('productos')
   const [items, setItems] = useState<ApiInventoryItem[]>([])
@@ -158,6 +161,11 @@ export function InventoryPage() {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   const loadDistribucion = useCallback(() => {
     setDistLoading(true)
     const params = new URLSearchParams()
@@ -185,7 +193,7 @@ export function InventoryPage() {
   }
 
   const filtered = items.filter(item => {
-    const state = resolveState(item)
+    const state = resolveState(item, nowMs)
     const mq = !query || `${item.name} ${item.family} ${item.category} ${item.codigo}`.toLowerCase().includes(query.toLowerCase())
     const ms = statusFilter === 'all'
       || (statusFilter === 'low' && state.label === 'Stock bajo')
@@ -520,7 +528,7 @@ export function InventoryPage() {
 
   const lowCount = items.filter(i => i.stock <= i.minStock).length
   const expCount = items.filter(i => {
-    const d = i.expiresAt ? Math.ceil((new Date(i.expiresAt).getTime() - Date.now()) / 86400000) : 999
+    const d = i.expiresAt ? Math.ceil((new Date(i.expiresAt).getTime() - nowMs) / 86400000) : 999
     return d <= 45
   }).length
   const priceCosto = Number(priceProduct?.precioCompra || 0)
@@ -995,7 +1003,7 @@ export function InventoryPage() {
                 </thead>
                 <tbody>
                   {filtered.map(item => {
-                    const state = resolveState(item)
+                    const state = resolveState(item, nowMs)
                     return (
                       <tr key={item.id} className="border-b transition-colors last:border-0 hover:bg-primary/5">
                         <td className="px-4 py-3 font-mono text-xs">{item.codigo}</td>
