@@ -15,6 +15,7 @@
 - `vercel.json` instala y compila frontend + backend.
 - `api/[...path].ts` entrega todas las rutas API a Fastify.
 - Rewrite `/api/:path*` resuelve explícitamente hacia la Function antes del fallback SPA.
+- `package.json` raíz fuerza runtime ESM compatible con backend Fastify.
 - `backend-fastify/src/server.ts` permite arranque persistente y serverless.
 - `backend-fastify/src/plugins/db.ts` acepta variables Botica o `DATABASE_URL`/`POSTGRES_URL`.
 - `frontend/src/lib/api.ts` ahora soporta `VITE_API_BASE_URL`.
@@ -48,6 +49,8 @@ JWT_SECRET=SECRETO_ALEATORIO_MINIMO_32_CARACTERES
 - API local + Supabase: `/health/ready` 200, 64 productos activos.
 - Primer deploy serverless: Function creada, pero rewrite SPA todavía devolvía 405.
 - Corrección posterior: prioridad explícita de `/api/*` y health público en `/api/health`.
+- Segundo deploy: routing correcto; runtime detectó wrapper CommonJS intentando cargar backend ESM.
+- Corrección posterior: proyecto raíz declarado `type: module`.
 
 ## Pendiente para corte
 
