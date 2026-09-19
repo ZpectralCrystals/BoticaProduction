@@ -53,7 +53,9 @@ async function loadPermissions(fastify: FastifyInstance, userId: number) {
     'SELECT cseccion FROM bot_permisos WHERE nusuario_id = $1 ORDER BY cseccion',
     [userId],
   )
-  return result.rows.map((row: { cseccion: string }) => row.cseccion.trim())
+  return result.rows
+    .map((row: { cseccion: string }) => row.cseccion.trim())
+    .filter((section) => section !== 'alquileres')
 }
 
 const authPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {

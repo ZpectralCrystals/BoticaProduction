@@ -27,6 +27,12 @@ type ClerkEmailAddress = {
   emailAddress: string
 }
 
+const RETIRED_PERMISSIONS = new Set(['alquileres'])
+
+function activePermissions(permisos: string[]) {
+  return permisos.filter((permiso) => !RETIRED_PERMISSIONS.has(permiso))
+}
+
 export type ClerkEmailAdminClient = {
   users: {
     getUser: (userId: string) => Promise<{
@@ -211,7 +217,7 @@ export default async function usersRoutes(
         admin: Boolean(row.ladmin),
         clerkLinked: Boolean(row.cclerk_user_id?.trim()),
         clerkUserId: row.cclerk_user_id?.trim() || null,
-        permisos: permissionsResult.rows.map((permission) => permission.cseccion.trim()),
+        permisos: activePermissions(permissionsResult.rows.map((permission) => permission.cseccion.trim())),
         creado: row.tcreado,
       })
     }
@@ -543,7 +549,7 @@ export default async function usersRoutes(
       const dni = String(body.dni || '').trim()
       const nombre = String(body.nombre || '').trim()
       const rol = String(body.rol || 'caja').trim() || 'caja'
-      const permisos = Array.isArray(body.permisos) ? body.permisos : []
+      const permisos = activePermissions(Array.isArray(body.permisos) ? body.permisos : [])
 
       if (!/^\d{8}$/.test(dni)) return reply.code(400).send({ error: 'DNI INVALIDO (8 digitos)' })
       if (!nombre) return reply.code(400).send({ error: 'NOMBRE ES OBLIGATORIO' })
@@ -631,7 +637,7 @@ export default async function usersRoutes(
 
       if (body.permisos) {
         await fastify.db.query('DELETE FROM bot_permisos WHERE nusuario_id = $1', [id])
-        for (const permiso of body.permisos) {
+        for (const permiso of activePermissions(body.permisos)) {
           await fastify.db.query(
             'INSERT INTO bot_permisos (nusuario_id, cseccion) VALUES ($1, $2) ON CONFLICT DO NOTHING',
             [id, permiso],
