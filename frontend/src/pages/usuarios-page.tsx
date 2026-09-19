@@ -39,6 +39,9 @@ const ALL_SECTIONS: { key: string; label: string }[] = [
   { key: 'auditoria', label: 'Auditoria' },
 ]
 
+const RETIRED_SECTIONS = new Set(['alquileres'])
+const activePermissions = (permisos: string[]) => permisos.filter((permiso) => !RETIRED_SECTIONS.has(permiso))
+
 type EstadoFiltro = 'activos' | 'inactivos' | 'todos'
 
 const ESTADO_FILTROS: Array<{ key: EstadoFiltro; label: string }> = [
@@ -87,7 +90,7 @@ export function UsuariosPage() {
 
   const startEdit = (u: ApiUsuario) => {
     setEditId(u.id)
-    setForm({ dni: u.dni, nombre: u.nombre, rol: u.rol, admin: u.admin, permisos: [...u.permisos] })
+    setForm({ dni: u.dni, nombre: u.nombre, rol: u.rol, admin: u.admin, permisos: activePermissions(u.permisos) })
     setShowForm(true)
   }
 
@@ -583,8 +586,8 @@ export function UsuariosPage() {
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {u.permisos.map(p => <Badge key={p} variant="neutral" className="text-xs">{p}</Badge>)}
-                    {u.permisos.length === 0 && <span className="text-xs text-muted">Sin modulos asignados</span>}
+                    {activePermissions(u.permisos).map(p => <Badge key={p} variant="neutral" className="text-xs">{p}</Badge>)}
+                    {activePermissions(u.permisos).length === 0 && <span className="text-xs text-muted">Sin modulos asignados</span>}
                   </div>
                   {u.estado !== 'A' && (
                     <p className="mt-2 text-xs text-amber-700">
