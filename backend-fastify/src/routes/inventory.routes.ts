@@ -27,6 +27,120 @@ function normalizeProductType(value: unknown) {
   return normalized === 'NO_MEDICAMENTO' ? 'NO_MEDICAMENTO' : 'MEDICAMENTO'
 }
 
+function normalizeRotation(value: unknown) {
+  const normalized = readTrimmedName(value).toLowerCase()
+  if (normalized === 'alta') return 'Alta'
+  if (normalized === 'baja') return 'Baja'
+  return 'Media'
+}
+
+function isValidDateOnly(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
+function normalizeStockInitialRow(raw: Record<string, unknown>, rowNumber: number) {
+  const tipoProducto = normalizeProductType(raw.tipoProducto ?? raw.tipo_producto ?? raw.tipo)
+  const isMedicine = tipoProducto === 'MEDICAMENTO'
+  const requiereLote = isMedicine ? true : readBoolean(raw.requiereLote ?? raw.requiere_lote, false)
+  const requiereVencimiento = isMedicine ? true : readBoolean(raw.requiereVencimiento ?? raw.requiere_vencimiento, requiereLote)
+  const stock = Number(raw.stock ?? raw.cantidad ?? raw.stockActual ?? raw.stock_actual ?? 0)
+  const costo = Number(raw.costo ?? raw.precioCompra ?? raw.precio_compra ?? 0)
+  const precioVenta1 = Number(raw.precioVenta1 ?? raw.precio_venta_1 ?? raw.precioVenta ?? raw.precio_venta ?? 0)
+  const precioVenta2 = parseOptionalPrice(raw.precioVenta2 ?? raw.precio_venta_2)
+  const precioVenta3 = parseOptionalPrice(raw.precioVenta3 ?? raw.precio_venta_3)
+  const lote = readTrimmedName(raw.lote ?? raw.codigoLote ?? raw.codigo_lote)
+  const vencimiento = readTrimmedName(raw.vencimiento ?? raw.fechaVencimiento ?? raw.fecha_vencimiento)
+
+  return {
+    rowNumber,
+    codigo: readTrimmedName(raw.codigo ?? raw.codigoBarra ?? raw.codigo_barra),
+    nombre: readTrimmedName(raw.nombre ?? raw.name),
+    tipoProducto,
+    generico: readTrimmedName(raw.generico ?? raw.composicion),
+    categoria: readTrimmedName(raw.categoria ?? raw.category) || 'Medicamentos',
+    familia: readTrimmedName(raw.familia ?? raw.family),
+    presentacion: readTrimmedName(raw.presentacion),
+    laboratorio: readTrimmedName(raw.laboratorio),
+    stock,
+    stockMin: Number(raw.stockMin ?? raw.stock_min ?? raw.stockMinimo ?? raw.stock_minimo ?? 0),
+    costo,
+    precioVenta1,
+    precioVenta2,
+    precioVenta3,
+    lote,
+    vencimiento,
+    ubicacion: readTrimmedName(raw.ubicacion ?? raw.location),
+    rotacion: normalizeRotation(raw.rotacion),
+    receta: readTrimmedName(raw.receta).toUpperCase() === 'S' ? 'S' : 'N',
+    requiereLote,
+    requiereVencimiento,
+  }
+}
+
+async function ensureInitialLoadFamily(client: any, familyName: string) {
+  if (!familyName) return null
+  const existing = await client.query(
+    `SELECT nid, cnombre
+     FROM bot_familias_producto
+     WHERE cestado = 'A' AND LOWER(BTRIM(cnombre)) = LOWER(BTRIM($1))
+     LIMIT 1`,
+    [familyName],
+  ) as { rows: Array<{ nid: number; cnombre: string }> }
+  if (existing.rows[0]) return existing.rows[0]
+  const inserted = await client.query(
+    `INSERT INTO bot_familias_producto (cnombre)
+     VALUES ($1)
+     RETURNING nid, cnombre`,
+    [familyName],
+  ) as { rows: Array<{ nid: number; cnombre: string }> }
+  return inserted.rows[0]
+}
+
+async function ensureInitialLoadCategory(client: any, categoryName: string, familyId: number | null) {
+  const existing = await client.query(
+    `SELECT nid, cnombre, nfamilia_id
+     FROM bot_categorias_producto
+     WHERE cestado = 'A' AND LOWER(BTRIM(cnombre)) = LOWER(BTRIM($1))
+     LIMIT 1`,
+    [categoryName],
+  ) as { rows: Array<{ nid: number; cnombre: string; nfamilia_id: number | null }> }
+  if (existing.rows[0]) return existing.rows[0]
+  const inserted = await client.query(
+    `INSERT INTO bot_categorias_producto (nfamilia_id, cnombre)
+     VALUES ($1, $2)
+     RETURNING nid, cnombre, nfamilia_id`,
+    [familyId, categoryName],
+  ) as { rows: Array<{ nid: number; cnombre: string; nfamilia_id: number | null }> }
+  return inserted.rows[0]
+}
+
+function validateInitialLoadRows(rows: ReturnType<typeof normalizeStockInitialRow>[]) {
+  const errors: Array<{ row: number; message: string }> = []
+  const codes = new Set<string>()
+
+  for (const row of rows) {
+    const prefix = `Fila ${row.rowNumber}:`
+    if (!row.nombre) errors.push({ row: row.rowNumber, message: `${prefix} nombre obligatorio` })
+    if (!Number.isInteger(row.stock) || row.stock < 0) errors.push({ row: row.rowNumber, message: `${prefix} stock debe ser entero >= 0` })
+    if (!Number.isFinite(row.costo) || row.costo < 0) errors.push({ row: row.rowNumber, message: `${prefix} costo invalido` })
+    if (!Number.isFinite(row.precioVenta1) || row.precioVenta1 <= 0) errors.push({ row: row.rowNumber, message: `${prefix} precioVenta1 debe ser > 0` })
+    if (row.precioVenta2 === undefined || row.precioVenta3 === undefined) errors.push({ row: row.rowNumber, message: `${prefix} precio venta opcional invalido` })
+    if (!['Alta', 'Media', 'Baja'].includes(row.rotacion)) errors.push({ row: row.rowNumber, message: `${prefix} rotacion debe ser Alta, Media o Baja` })
+    if (row.codigo) {
+      const key = row.codigo.toUpperCase()
+      if (codes.has(key)) errors.push({ row: row.rowNumber, message: `${prefix} codigo repetido en archivo` })
+      codes.add(key)
+    }
+    if (row.stock > 0 && row.requiereLote && !row.lote) errors.push({ row: row.rowNumber, message: `${prefix} lote obligatorio` })
+    if (row.stock > 0 && row.requiereVencimiento && !row.vencimiento) errors.push({ row: row.rowNumber, message: `${prefix} vencimiento obligatorio` })
+    if (row.vencimiento && !isValidDateOnly(row.vencimiento)) errors.push({ row: row.rowNumber, message: `${prefix} vencimiento debe ser YYYY-MM-DD` })
+  }
+
+  return errors
+}
+
 async function hasDuplicateActiveName(
   fastify: FastifyInstance,
   table: 'bot_familias_producto' | 'bot_categorias_producto' | 'bot_componentes_producto',
@@ -336,7 +450,7 @@ export default async function inventoryRoutes(
   })
 
   fastify.post('/familias', { preHandler: fastify.requireAuth }, async (request, reply) => {
-    if (!(await fastify.requireAnyPermission(request, reply, ['inventario'], {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario_editar'], {
       errorMessage: 'No tiene permisos para administrar familias',
     }))) return
 
@@ -360,7 +474,7 @@ export default async function inventoryRoutes(
   })
 
   fastify.patch('/familias/:id', { preHandler: fastify.requireAuth }, async (request, reply) => {
-    if (!(await fastify.requireAnyPermission(request, reply, ['inventario'], {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario_editar'], {
       errorMessage: 'No tiene permisos para administrar familias',
     }))) return
 
@@ -406,7 +520,7 @@ export default async function inventoryRoutes(
   })
 
   fastify.delete('/familias/:id', { preHandler: fastify.requireAuth }, async (request, reply) => {
-    if (!(await fastify.requireAnyPermission(request, reply, ['inventario'], {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario_editar'], {
       errorMessage: 'No tiene permisos para administrar familias',
     }))) return
 
@@ -486,7 +600,7 @@ export default async function inventoryRoutes(
   })
 
   fastify.post('/categorias', { preHandler: fastify.requireAuth }, async (request, reply) => {
-    if (!(await fastify.requireAnyPermission(request, reply, ['inventario'], {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario_editar'], {
       errorMessage: 'No tiene permisos para administrar categorías',
     }))) return
 
@@ -515,7 +629,7 @@ export default async function inventoryRoutes(
   })
 
   fastify.patch('/categorias/:id', { preHandler: fastify.requireAuth }, async (request, reply) => {
-    if (!(await fastify.requireAnyPermission(request, reply, ['inventario'], {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario_editar'], {
       errorMessage: 'No tiene permisos para administrar categorías',
     }))) return
 
@@ -571,7 +685,7 @@ export default async function inventoryRoutes(
   })
 
   fastify.delete('/categorias/:id', { preHandler: fastify.requireAuth }, async (request, reply) => {
-    if (!(await fastify.requireAnyPermission(request, reply, ['inventario'], {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario_editar'], {
       errorMessage: 'No tiene permisos para administrar categorías',
     }))) return
 
@@ -638,7 +752,7 @@ export default async function inventoryRoutes(
   })
 
   fastify.post('/componentes', { preHandler: fastify.requireAuth }, async (request, reply) => {
-    if (!(await fastify.requireAnyPermission(request, reply, ['inventario'], {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario_editar'], {
       errorMessage: 'No tiene permisos para administrar componentes',
     }))) return
 
@@ -662,7 +776,7 @@ export default async function inventoryRoutes(
   })
 
   fastify.patch('/componentes/:id', { preHandler: fastify.requireAuth }, async (request, reply) => {
-    if (!(await fastify.requireAnyPermission(request, reply, ['inventario'], {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario_editar'], {
       errorMessage: 'No tiene permisos para administrar componentes',
     }))) return
 
@@ -704,7 +818,7 @@ export default async function inventoryRoutes(
   })
 
   fastify.delete('/componentes/:id', { preHandler: fastify.requireAuth }, async (request, reply) => {
-    if (!(await fastify.requireAnyPermission(request, reply, ['inventario'], {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario_editar'], {
       errorMessage: 'No tiene permisos para administrar componentes',
     }))) return
 
@@ -840,8 +954,200 @@ export default async function inventoryRoutes(
     })
   })
 
+  fastify.post('/carga-inicial', { preHandler: fastify.requireAuth }, async (request, reply) => {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario-inicial'], {
+      errorMessage: 'No tiene permisos para carga inicial de inventario',
+    }))) {
+      return
+    }
+
+    const user = request.authUser
+    if (!user) return reply.code(401).send({ error: 'NO HA INICIADO SESION' })
+
+    const body = request.body as { rows?: Array<Record<string, unknown>> }
+    const rawRows = Array.isArray(body.rows) ? body.rows : []
+    if (rawRows.length === 0) return reply.code(400).send({ error: 'NO HAY FILAS PARA CARGAR' })
+    if (rawRows.length > 300) return reply.code(400).send({ error: 'MAXIMO 300 PRODUCTOS POR CARGA' })
+
+    const rows = rawRows.map((row, index) => normalizeStockInitialRow(row, index + 2))
+    const validationErrors = validateInitialLoadRows(rows)
+    if (validationErrors.length > 0) {
+      return reply.code(400).send({ error: 'ARCHIVO CON ERRORES', errors: validationErrors })
+    }
+
+    const client = await fastify.db.connect()
+    try {
+      await client.query('BEGIN')
+
+      const warehouse = await client.query<{ nid: number }>(
+        `SELECT nid
+         FROM bot_almacenes
+         WHERE ccodigo = 'ALM-BOT-DISP' AND cestado = 'A'
+         LIMIT 1`,
+      )
+      const almacenId = Number(warehouse.rows[0]?.nid || 0)
+      if (!almacenId) {
+        await client.query('ROLLBACK')
+        return reply.code(400).send({ error: 'ALMACEN DISPONIBLE NO ENCONTRADO' })
+      }
+
+      const created: Array<{ row: number; id: string; codigo: string; nombre: string }> = []
+      const errors: Array<{ row: number; message: string }> = []
+
+      for (const row of rows) {
+        const codigo = row.codigo || `INI-${String(Date.now()).slice(-8)}-${String(row.rowNumber).padStart(3, '0')}`
+        const exists = await client.query<{ nid: number }>(
+          `SELECT nid FROM bot_productos WHERE UPPER(BTRIM(ccodigo)) = UPPER(BTRIM($1)) LIMIT 1`,
+          [codigo],
+        )
+        if (exists.rows[0]) {
+          errors.push({ row: row.rowNumber, message: `Fila ${row.rowNumber}: codigo ya existe (${codigo})` })
+          continue
+        }
+
+        const family = await ensureInitialLoadFamily(client, row.familia)
+        const category = await ensureInitialLoadCategory(client, row.categoria, family ? Number(family.nid) : null)
+        const familyId = family ? Number(family.nid) : (category.nfamilia_id ? Number(category.nfamilia_id) : null)
+        const familyName = family?.cnombre?.trim() || ''
+        const categoryId = Number(category.nid)
+        const categoryName = category.cnombre.trim()
+        const expiresAt = row.vencimiento || null
+        const precioVenta2 = row.precioVenta2 ?? null
+        const precioVenta3 = row.precioVenta3 ?? null
+
+        const product = await client.query<{ nid: number }>(
+          `INSERT INTO bot_productos
+             (ccodigo, cnombre, ctipo_producto, cgenerico, ccategoria, cfamilia,
+              nfamilia_id, ncategoria_id, cpresenta, claborat, nprecompra,
+              npreventa, npreventa_2, npreventa_3, nstock, nstockmin,
+              cubicacion, crotacion, tvencimien, creceta,
+              lrequiere_lote, lrequiere_vencimiento)
+           VALUES
+             ($1, $2, $3, $4, $5, $6,
+              $7, $8, $9, $10, $11,
+              $12, $13, $14, $15, $16,
+              $17, $18, $19, $20,
+              $21, $22)
+           RETURNING nid`,
+          [
+            codigo,
+            row.nombre,
+            row.tipoProducto,
+            row.generico || null,
+            categoryName,
+            familyName || null,
+            familyId,
+            categoryId,
+            row.presentacion || null,
+            row.laboratorio || null,
+            row.costo.toFixed(2),
+            row.precioVenta1.toFixed(2),
+            precioVenta2 === null ? null : precioVenta2.toFixed(2),
+            precioVenta3 === null ? null : precioVenta3.toFixed(2),
+            row.stock,
+            row.stockMin,
+            row.ubicacion || null,
+            row.rotacion,
+            expiresAt,
+            row.receta,
+            row.requiereLote,
+            row.requiereVencimiento,
+          ],
+        )
+        const productId = Number(product.rows[0].nid)
+
+        const upsertPrice = async (slot: string, price: number | null) => {
+          if (price === null) return
+          await client.query(
+            `INSERT INTO bot_producto_precios (nproducto_id, cnombre, nprecio, lactivo, nusuario_id, cusuario)
+             VALUES ($1, $2, $3, TRUE, $4, $5)
+             ON CONFLICT (nproducto_id, cnombre)
+             DO UPDATE SET nprecio = EXCLUDED.nprecio,
+                           lactivo = TRUE,
+                           nusuario_id = EXCLUDED.nusuario_id,
+                           cusuario = EXCLUDED.cusuario`,
+            [productId, slot, price.toFixed(2), user.id, user.nombre],
+          )
+        }
+        await upsertPrice('PRECIO_1', row.precioVenta1)
+        await upsertPrice('PRECIO_2', precioVenta2)
+        await upsertPrice('PRECIO_3', precioVenta3)
+
+        let loteId: number | null = null
+        if (row.stock > 0 && row.requiereLote) {
+          const lote = await client.query<{ nid: number }>(
+            `INSERT INTO bot_lotes
+               (nproducto_id, nalmacen_id, ccodigo_lote, ncantidad, ncantidad_inicial,
+                nprecio_compra, dfechavencimiento, cestado, cnotas)
+             VALUES ($1, $2, $3, $4, $4, $5, $6, 'ACTIVO', $7)
+             RETURNING nid`,
+            [
+              productId,
+              almacenId,
+              row.lote,
+              row.stock,
+              row.costo.toFixed(2),
+              row.vencimiento,
+              'Carga inicial de inventario',
+            ],
+          )
+          loteId = Number(lote.rows[0].nid)
+        }
+
+        if (row.stock > 0) {
+          await client.query(
+            `INSERT INTO bot_kardex
+               (nproducto_id, ctipo, cref_tabla, nref_id, nlote_id, ccodigo_lote,
+                nalmacen_id, ncantidad, nstock_anterior, nstock_nuevo,
+                cdetalle, nusuario_id, cusuario)
+             VALUES
+               ($1, 'STOCK_INICIAL', 'bot_productos', $1, $2, $3,
+                $4, $5, 0, $5, $6, $7, $8)`,
+            [
+              productId,
+              loteId,
+              row.lote || null,
+              almacenId,
+              row.stock,
+              `Carga inicial: ${row.nombre}`,
+              user.id,
+              user.nombre,
+            ],
+          )
+        }
+
+        await client.query(
+          `INSERT INTO bot_auditoria (nusuario_id, cusuario, caccion, ctabla, nregistro_id, cdetalle)
+           VALUES ($1, $2, 'CARGA_INICIAL_INVENTARIO', 'bot_productos', $3, $4)`,
+          [
+            user.id,
+            user.nombre,
+            productId,
+            `Producto "${row.nombre}" cargado con stock inicial ${row.stock}`,
+          ],
+        )
+
+        created.push({ row: row.rowNumber, id: String(productId), codigo, nombre: row.nombre })
+      }
+
+      if (errors.length > 0) {
+        await client.query('ROLLBACK')
+        return reply.code(409).send({ error: 'ARCHIVO CON ERRORES', errors })
+      }
+
+      await client.query('COMMIT')
+      return { ok: true, created, total: created.length }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      request.log.error({ error }, 'Error en carga inicial de inventario')
+      return reply.code(500).send({ error: 'No se pudo completar la carga inicial' })
+    } finally {
+      client.release()
+    }
+  })
+
   fastify.post('/', { preHandler: fastify.requireAuth }, async (request, reply) => {
-    if (!(await fastify.requireAnyPermission(request, reply, ['inventario', 'almacenes'], {
+    if (!(await fastify.requireAnyPermission(request, reply, ['inventario_editar'], {
       errorMessage: 'No tiene permisos para crear o ajustar inventario',
     }))) {
       return

@@ -70,6 +70,14 @@ function getProducto(productos: ApiInventoryItem[], productoId: string) {
   return productos.find((producto) => producto.id === productoId)
 }
 
+function getRecepcionBadge(compra: ApiCompra) {
+  const estado = (compra.recepcion_estado || 'PENDIENTE').trim().toUpperCase()
+  if (estado === 'RECIBIDA') return { label: 'Recibida', variant: 'success' as const }
+  if (estado === 'PARCIAL') return { label: 'Parcial', variant: 'warning' as const }
+  if (estado === 'SIN_DETALLE') return { label: 'Sin detalle', variant: 'neutral' as const }
+  return { label: 'Pendiente', variant: 'danger' as const }
+}
+
 export function ComprasPage() {
   const [compras, setCompras] = useState<ApiCompra[]>([])
   const [proveedores, setProveedores] = useState<ApiProveedor[]>([])
@@ -236,7 +244,7 @@ export function ComprasPage() {
         <Card className="space-y-5 p-5">
           <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary-strong">
             <PackagePlus className="mt-0.5 h-4 w-4 shrink-0" />
-            En esta fase las compras formales solo se registran con proveedor y almacén destino seleccionados, y comprobante tipo FACTURA.
+            Compra registra pedido/documento a proveedor. El stock físico recién ingresa desde el módulo Recepción.
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <label className="block space-y-1">
@@ -380,22 +388,35 @@ export function ComprasPage() {
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="border-b bg-slate-50 text-left text-xs uppercase tracking-wide text-muted"><th className="px-4 py-3">Codigo</th><th className="px-4 py-3">Proveedor</th><th className="px-4 py-3">Almacén destino</th><th className="px-4 py-3">Tipo</th><th className="px-4 py-3">Pago</th><th className="px-4 py-3">Documento</th><th className="px-4 py-3">Total</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Fecha</th></tr></thead>
+            <thead><tr className="border-b bg-slate-50 text-left text-xs uppercase tracking-wide text-muted"><th className="px-4 py-3">Codigo</th><th className="px-4 py-3">Proveedor</th><th className="px-4 py-3">Almacén destino</th><th className="px-4 py-3">Tipo</th><th className="px-4 py-3">Pago</th><th className="px-4 py-3">Documento</th><th className="px-4 py-3">Total</th><th className="px-4 py-3">Recepción</th><th className="px-4 py-3">Pendiente</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Fecha</th></tr></thead>
             <tbody>
-              {compras.map(c => (
-                <tr key={c.nid} className="border-b last:border-0 hover:bg-primary/5">
-                  <td className="px-4 py-3 font-mono text-xs">{c.ccodigo?.trim()}</td>
-                  <td className="px-4 py-3 font-medium">{c.cproveedor?.trim()}</td>
-                  <td className="px-4 py-3 text-muted">{[c.local_nombre?.trim(), c.almacen_nombre?.trim(), c.almacen_tipo?.trim()].filter(Boolean).join(' · ') || '-'}</td>
-                  <td className="px-4 py-3"><Badge variant="neutral">{c.ctipo_comprobante?.trim() || 'FACTURA'}</Badge></td>
-                  <td className="px-4 py-3"><Badge variant={c.ctipo_pago === 'CREDITO' ? 'warning' : 'success'}>{c.ctipo_pago?.trim() || 'CONTADO'}</Badge></td>
-                  <td className="px-4 py-3">{c.cdocumento?.trim() || '-'}</td>
-                  <td className="px-4 py-3 font-semibold">S/{parseFloat(c.ntotal).toFixed(2)}</td>
-                  <td className="px-4 py-3"><Badge variant="neutral">{c.cestado?.trim()}</Badge></td>
-                  <td className="px-4 py-3 text-muted">{c.tcreado}</td>
-                </tr>
-              ))}
-              {compras.length === 0 && <tr><td colSpan={9} className="py-8 text-center text-muted">Sin compras registradas</td></tr>}
+              {compras.map(c => {
+                const recepcion = getRecepcionBadge(c)
+                const pendiente = Number(c.cantidad_pendiente ?? 0)
+                const esperado = Number(c.cantidad_esperada ?? 0)
+                const recibido = Number(c.cantidad_recibida ?? 0)
+                return (
+                  <tr key={c.nid} className="border-b last:border-0 hover:bg-primary/5">
+                    <td className="px-4 py-3 font-mono text-xs">{c.ccodigo?.trim()}</td>
+                    <td className="px-4 py-3 font-medium">{c.cproveedor?.trim()}</td>
+                    <td className="px-4 py-3 text-muted">{[c.local_nombre?.trim(), c.almacen_nombre?.trim(), c.almacen_tipo?.trim()].filter(Boolean).join(' · ') || '-'}</td>
+                    <td className="px-4 py-3"><Badge variant="neutral">{c.ctipo_comprobante?.trim() || 'FACTURA'}</Badge></td>
+                    <td className="px-4 py-3"><Badge variant={c.ctipo_pago === 'CREDITO' ? 'warning' : 'success'}>{c.ctipo_pago?.trim() || 'CONTADO'}</Badge></td>
+                    <td className="px-4 py-3">{c.cdocumento?.trim() || '-'}</td>
+                    <td className="px-4 py-3 font-semibold">S/{parseFloat(c.ntotal).toFixed(2)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={recepcion.variant}>{recepcion.label}</Badge>
+                        {esperado > 0 && <span className="text-xs text-muted">{recibido}/{esperado} recibido</span>}
+                      </div>
+                    </td>
+                    <td className={pendiente > 0 ? 'px-4 py-3 font-semibold text-warning' : 'px-4 py-3 text-success'}>{pendiente}</td>
+                    <td className="px-4 py-3"><Badge variant="neutral">{c.cestado?.trim()}</Badge></td>
+                    <td className="px-4 py-3 text-muted">{c.tcreado}</td>
+                  </tr>
+                )
+              })}
+              {compras.length === 0 && <tr><td colSpan={11} className="py-8 text-center text-muted">Sin compras registradas</td></tr>}
             </tbody>
           </table>
         </div>

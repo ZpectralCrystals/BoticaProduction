@@ -33,11 +33,13 @@ async function requestV1<T>(path: string, options?: RequestInit): Promise<T> {
   })() : null
 
   if (!res.ok) {
-    throw new Error(
+    const error = new Error(
       data?.message ??
       data?.error ??
       `Error de servidor (${res.status})`,
     )
+    if (data && typeof data === 'object') Object.assign(error, data)
+    throw error
   }
   if (raw && data === null) {
     throw new Error('La respuesta del servidor no es JSON válido')
@@ -175,6 +177,47 @@ export function apiUpdateProductPrices(data: Pick<ApiInventoryItem, 'id' | 'prec
   return requestV1<{ ok: boolean; id: string }>('/inventario', {
     method: 'POST',
     body: JSON.stringify({ action: 'updatePrices', ...data }),
+  })
+}
+
+export interface ApiInitialInventoryRow {
+  codigo?: string
+  nombre: string
+  tipoProducto?: 'MEDICAMENTO' | 'NO_MEDICAMENTO' | string
+  generico?: string
+  composicion?: string
+  familia?: string
+  categoria?: string
+  presentacion?: string
+  laboratorio?: string
+  stock: number
+  stockMin?: number
+  costo?: number
+  precioVenta1: number
+  precioVenta2?: number | null
+  precioVenta3?: number | null
+  lote?: string
+  vencimiento?: string
+  ubicacion?: string
+  rotacion?: 'Alta' | 'Media' | 'Baja' | string
+  receta?: 'S' | 'N' | string
+  requiereLote?: boolean
+  requiereVencimiento?: boolean
+}
+
+export interface ApiInitialInventoryError {
+  row: number
+  message: string
+}
+
+export function apiCargaInicialInventario(rows: ApiInitialInventoryRow[]) {
+  return requestV1<{
+    ok: boolean
+    total: number
+    created: Array<{ row: number; id: string; codigo: string; nombre: string }>
+  }>('/inventario/carga-inicial', {
+    method: 'POST',
+    body: JSON.stringify({ rows }),
   })
 }
 
@@ -651,8 +694,31 @@ export interface ApiCompra {
   ntotal: string
   cestado: string
   tcreado: string
+  cantidad_esperada?: string | null
+  cantidad_recibida?: string | null
+  cantidad_pendiente?: string | null
+  recepcion_estado?: 'PENDIENTE' | 'PARCIAL' | 'RECIBIDA' | 'SIN_DETALLE' | string | null
+}
+export interface ApiCompraDetalle {
+  nid: string
+  ncompra_id: string
+  nproducto_id: string
+  ncantidad: string
+  npreunit: string
+  nsubtotal: string
+  ccodigo_lote?: string | null
+  dfecha_vencimiento?: string | null
+  cnotas_lote?: string | null
+  producto_nombre?: string | null
+  recibido_previo?: string | null
+  cantidad_pendiente?: string | null
+}
+export interface ApiCompraDetalleResponse {
+  compra: ApiCompra
+  detalle: ApiCompraDetalle[]
 }
 export function apiGetCompras() { return requestV1<ApiCompra[]>('/compras') }
+export function apiGetCompraDetalle(id: string) { return requestV1<ApiCompraDetalleResponse>(`/compras?id=${encodeURIComponent(id)}`) }
 export function apiAddCompra(data: {
   proveedorId: number
   almacenId: number
@@ -671,6 +737,39 @@ export function apiAddCompra(data: {
   }>
 }) {
   return requestV1<{ ok: boolean; id: string; codigo: string; total: number }>('/compras', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+// Recepción de mercancía
+export interface ApiRecepcion {
+  nid: string
+  ccodigo: string
+  ncompra_id: string
+  cestado: string
+  cnotas: string | null
+  cincidencias: string | null
+  cusuario: string | null
+  tcreado: string
+  compra_codigo: string | null
+  cproveedor: string | null
+  cdocumento: string | null
+}
+export function apiGetRecepciones() { return requestV1<ApiRecepcion[]>('/recepcion') }
+export function apiAddRecepcion(data: {
+  compraId: number
+  notas?: string
+  incidencias?: string
+  items?: Array<{
+    detalleId: number
+    productoId: number
+    cantidadEsperada: number
+    cantidadRecibida: number
+    incidencia?: string
+  }>
+}) {
+  return requestV1<{ ok: boolean; id: string; codigo: string }>('/recepcion', {
     method: 'POST',
     body: JSON.stringify(data),
   })

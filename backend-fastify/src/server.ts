@@ -27,7 +27,7 @@ import prescriptionsRoutes from './routes/prescriptions.routes.js'
 import profileRoutes from './routes/profile.routes.js'
 import providersRoutes from './routes/providers.routes.js'
 import purchasesRoutes from './routes/purchases.routes.js'
-import rentalsRoutes from './routes/rentals.routes.js'
+import receptionRoutes from './routes/reception.routes.js'
 import reportsRoutes from './routes/reports.routes.js'
 import salesRoutes from './routes/sales.routes.js'
 import servicesRoutes from './routes/services.routes.js'
@@ -221,7 +221,7 @@ async function registerRoutes() {
       await instance.register(profileRoutes, { prefix: '/perfil' })
       await instance.register(providersRoutes, { prefix: '/proveedores' })
       await instance.register(purchasesRoutes, { prefix: '/compras' })
-      await instance.register(rentalsRoutes, { prefix: '/alquileres' })
+      await instance.register(receptionRoutes, { prefix: '/recepcion' })
       await instance.register(reportsRoutes, { prefix: '/reportes' })
       await instance.register(salesRoutes, { prefix: '/ventas' })
       await instance.register(servicesRoutes, { prefix: '/servicios' })

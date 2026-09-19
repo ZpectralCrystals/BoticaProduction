@@ -17,10 +17,11 @@ import { ProveedoresPage } from '@/pages/proveedores-page'
 import { MedicosPage } from '@/pages/medicos-page'
 import { ReportesPage } from '@/pages/reportes-page'
 import { TransferenciasPage } from '@/pages/transferencias-page'
-import { AlquileresPage } from '@/pages/alquileres-page'
 import { DeudoresPage } from '@/pages/deudores-page'
 import { CxpPage } from '@/pages/cxp-page'
 import { InventarioVarPage } from '@/pages/inventario-var-page'
+import { IngresoInventarioInicialPage } from '@/pages/ingreso-inventario-inicial-page'
+import { RecepcionPage } from '@/pages/recepcion-page'
 import { AuditoriaPage } from '@/pages/auditoria-page'
 import { UsuariosPage } from '@/pages/usuarios-page'
 import { PerfilPage } from '@/pages/perfil-page'
@@ -83,6 +84,14 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: 'recepcion',
+        element: (
+          <RequireSection section="recepcion">
+            <RecepcionPage />
+          </RequireSection>
+        ),
+      },
+      {
         path: 'proveedores',
         element: (
           <RequireSection section="proveedores">
@@ -131,14 +140,6 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: 'alquileres',
-        element: (
-          <RequireSection section="alquileres">
-            <AlquileresPage />
-          </RequireSection>
-        ),
-      },
-      {
         path: 'deudores',
         element: (
           <RequireSection section="deudores">
@@ -159,6 +160,14 @@ export const router = createBrowserRouter([
         element: (
           <RequireSection section="inventario-var">
             <InventarioVarPage />
+          </RequireSection>
+        ),
+      },
+      {
+        path: 'inventario-inicial',
+        element: (
+          <RequireSection section="inventario-inicial">
+            <IngresoInventarioInicialPage />
           </RequireSection>
         ),
       },

@@ -11,7 +11,6 @@ import {
   apiUsuarioAction,
 } from '@/lib/api'
 import type { ApiClerkUser, ApiUsuario, ApiUsuarioClerkLinkStatus } from '@/lib/api'
-import type { AppSection } from '@/lib/app-sections'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -20,21 +19,23 @@ import { Input } from '@/components/ui/input'
 import { useAuthBridge } from '@/context/auth-bridge'
 import { useAuth } from '@/context/auth-context'
 
-const ALL_SECTIONS: { key: AppSection; label: string }[] = [
+const ALL_SECTIONS: { key: string; label: string }[] = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'inventario', label: 'Inventario' },
+  { key: 'inventario_editar', label: 'Editar inventario normal' },
+  { key: 'inventario-inicial', label: 'Ingreso inventario inicial' },
   { key: 'ventas', label: 'Ventas' },
   { key: 'caja', label: 'Caja' },
   { key: 'compras', label: 'Compras' },
+  { key: 'recepcion', label: 'Recepción' },
   { key: 'proveedores', label: 'Proveedores' },
   { key: 'pacientes', label: 'Pacientes' },
   { key: 'procedimientos', label: 'Procedimientos' },
   { key: 'medicos', label: 'Medicos' },
   { key: 'reportes', label: 'Reportes' },
   { key: 'transferencias', label: 'Transferencias' },
-  { key: 'alquileres', label: 'Alquileres' },
   { key: 'deudores', label: 'Deudores' },
-  { key: 'inventario-var', label: 'Inv. Variado' },
+  { key: 'inventario-var', label: 'Inventario Avanzado' },
   { key: 'auditoria', label: 'Auditoria' },
 ]
 

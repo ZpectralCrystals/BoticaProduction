@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Search, ChevronDown, ChevronRight, Warehouse, BadgeDollarSign, History, Pencil, Trash2, Plus, X } from 'lucide-react'
+import { Search, ChevronDown, ChevronRight, Warehouse, BadgeDollarSign, History, Pencil, Trash2, Plus, X, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
   apiGetInventory, apiGetProveedores, apiAddProduct, apiUpdateProduct, apiGetDistribucion, apiGetLocales, apiUpdateProductPrices,
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogTitle } from '@/components/ui/dialog'
 import { Input, inputBaseClassName } from '@/components/ui/input'
+import { useAuth } from '@/context/auth-context'
 
 const emptyForm = {
   name: '', tipoProducto: 'MEDICAMENTO', generico: '', category: 'Medicamentos', family: '', familyId: '', categoryId: '', presentacion: '',
@@ -105,6 +106,8 @@ function loteColor(dias: number) {
 export function InventoryPage() {
   const [nowMs, setNowMs] = useState(INITIAL_NOW_MS)
   const navigate = useNavigate()
+  const { isAdmin, isSuper } = useAuth()
+  const canManageInventory = isAdmin || isSuper
   const [tab, setTab] = useState<'productos' | 'familias' | 'categorias' | 'componentes' | 'distribucion'>('productos')
   const [items, setItems] = useState<ApiInventoryItem[]>([])
   const [proveedores, setProveedores] = useState<ApiProveedor[]>([])
@@ -230,6 +233,7 @@ export function InventoryPage() {
   }
 
   const startCreate = () => {
+    if (!canManageInventory) return
     setEditId(null)
     setForm(emptyForm)
     setFormComponents([])
@@ -237,6 +241,7 @@ export function InventoryPage() {
   }
 
   const startEdit = (p: ApiInventoryItem) => {
+    if (!canManageInventory) return
     const familyId = resolveFamilyId(p)
     const categoryId = resolveCategoryId(p)
     setEditId(p.id)
@@ -264,6 +269,7 @@ export function InventoryPage() {
   }
 
   const startPriceEdit = (p: ApiInventoryItem) => {
+    if (!canManageInventory) return
     setPriceProduct(p)
     setPriceForm({
       precioVenta1: formatMoneyInput(getSalePrice1(p)),
@@ -298,6 +304,10 @@ export function InventoryPage() {
   }
 
   const submit = async () => {
+    if (!canManageInventory) {
+      toast.error('Solo admin puede editar inventario normal')
+      return
+    }
     const medicamento = isMedicamento(form.tipoProducto)
     if (!form.name.trim()) { toast.error('Nombre es obligatorio'); return }
     if (!form.categoryId) { toast.error('Categoría es obligatoria'); return }
@@ -373,6 +383,10 @@ export function InventoryPage() {
   }
 
   const submitPrice = async () => {
+    if (!canManageInventory) {
+      toast.error('Solo admin puede editar precios')
+      return
+    }
     if (!priceProduct) return
 
     const precioVenta1 = Number(priceForm.precioVenta1)
@@ -549,24 +563,28 @@ export function InventoryPage() {
         >
           Productos
         </button>
-        <button
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${tab === 'familias' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:bg-primary/10 hover:text-primary-strong'}`}
-          onClick={() => setTab('familias')}
-        >
-          Familias
-        </button>
-        <button
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${tab === 'categorias' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:bg-primary/10 hover:text-primary-strong'}`}
-          onClick={() => setTab('categorias')}
-        >
-          Categorías
-        </button>
-        <button
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${tab === 'componentes' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:bg-primary/10 hover:text-primary-strong'}`}
-          onClick={() => setTab('componentes')}
-        >
-          Componentes
-        </button>
+        {canManageInventory && (
+          <>
+            <button
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${tab === 'familias' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:bg-primary/10 hover:text-primary-strong'}`}
+              onClick={() => setTab('familias')}
+            >
+              Familias
+            </button>
+            <button
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${tab === 'categorias' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:bg-primary/10 hover:text-primary-strong'}`}
+              onClick={() => setTab('categorias')}
+            >
+              Categorías
+            </button>
+            <button
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${tab === 'componentes' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:bg-primary/10 hover:text-primary-strong'}`}
+              onClick={() => setTab('componentes')}
+            >
+              Componentes
+            </button>
+          </>
+        )}
         <button
           className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${tab === 'distribucion' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:bg-primary/10 hover:text-primary-strong'}`}
           onClick={() => setTab('distribucion')}
@@ -613,7 +631,14 @@ export function InventoryPage() {
                   <option value="stable">Estable</option>
                 </select>
               </div>
-              <Button onClick={startCreate}><Plus className="h-4 w-4" /> Nuevo producto</Button>
+              {canManageInventory && (
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => navigate('/panel/inventario-inicial')}>
+                    <Upload className="h-4 w-4" /> Ingreso por primera vez
+                  </Button>
+                  <Button onClick={startCreate}><Plus className="h-4 w-4" /> Nuevo producto</Button>
+                </div>
+              )}
             </div>
           </Card>
 
@@ -1051,16 +1076,18 @@ export function InventoryPage() {
                         <td className="px-4 py-3"><Badge variant={state.variant}>{state.label}</Badge></td>
                         <td className="w-[132px] px-4 py-3">
                           <div className="flex items-center justify-end gap-1">
-                            <Button
-                              aria-label={`Editar precios de ${item.name}`}
-                              className="h-8 w-8 rounded-full p-0"
-                              size="icon"
-                              title="Editar precios"
-                              variant="outline"
-                              onClick={() => startPriceEdit(item)}
-                            >
-                              <BadgeDollarSign className="h-4 w-4" />
-                            </Button>
+                            {canManageInventory && (
+                              <Button
+                                aria-label={`Editar precios de ${item.name}`}
+                                className="h-8 w-8 rounded-full p-0"
+                                size="icon"
+                                title="Editar precios"
+                                variant="outline"
+                                onClick={() => startPriceEdit(item)}
+                              >
+                                <BadgeDollarSign className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
                               aria-label={`Ver historial de precios de ${item.name}`}
                               className="h-8 w-8 rounded-full p-0"
@@ -1071,16 +1098,18 @@ export function InventoryPage() {
                             >
                               <History className="h-4 w-4" />
                             </Button>
-                            <Button
-                              aria-label={`Editar ${item.name}`}
-                              className="h-8 w-8 rounded-full p-0"
-                              size="icon"
-                              title="Editar producto"
-                              variant="outline"
-                              onClick={() => startEdit(item)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
+                            {canManageInventory && (
+                              <Button
+                                aria-label={`Editar ${item.name}`}
+                                className="h-8 w-8 rounded-full p-0"
+                                size="icon"
+                                title="Editar producto"
+                                variant="outline"
+                                onClick={() => startEdit(item)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            )}
                             {item.stock <= item.minStock && (
                               <Button size="sm" variant="outline" onClick={() => navigate('/panel/compras')}>Registrar compra</Button>
                             )}

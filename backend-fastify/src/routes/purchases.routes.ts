@@ -11,6 +11,7 @@ type PurchaseSchemaStatus = {
   hasAlmacenesTable: boolean
   hasLocalesTable: boolean
   hasMovimientosAlmacenTable: boolean
+  hasRecepcionDetTable: boolean
   comprasTieneTipoComprobante: boolean
   comprasTieneAlmacenId: boolean
   lotesTieneAlmacenId: boolean
@@ -28,7 +29,7 @@ async function getPurchaseSchemaStatus(fastify: FastifyInstance): Promise<Purcha
     SELECT table_name
     FROM information_schema.tables
     WHERE table_schema = 'public'
-      AND table_name IN ('bot_almacenes', 'bot_locales', 'bot_movimientos_almacen')
+      AND table_name IN ('bot_almacenes', 'bot_locales', 'bot_movimientos_almacen', 'bot_recepcion_det')
   `)
 
   const columnsResult = await fastify.db.query<{ table_name: string; column_name: string }>(`
@@ -49,6 +50,7 @@ async function getPurchaseSchemaStatus(fastify: FastifyInstance): Promise<Purcha
     hasAlmacenesTable: tables.has('bot_almacenes'),
     hasLocalesTable: tables.has('bot_locales'),
     hasMovimientosAlmacenTable: tables.has('bot_movimientos_almacen'),
+    hasRecepcionDetTable: tables.has('bot_recepcion_det'),
     comprasTieneTipoComprobante: columns.has('bot_compras.ctipo_comprobante'),
     comprasTieneAlmacenId: columns.has('bot_compras.nalmacen_id'),
     lotesTieneAlmacenId: columns.has('bot_lotes.nalmacen_id'),
@@ -128,6 +130,35 @@ export default async function purchasesRoutes(
       ? `LEFT JOIN bot_almacenes a ON a.nid = c.nalmacen_id
          LEFT JOIN bot_locales l ON l.nid = a.nlocal_id`
       : ''
+    const supportsReceptionStatus = schemaStatus.hasRecepcionDetTable
+    const selectReceptionFields = supportsReceptionStatus
+      ? `COALESCE(recep.cantidad_esperada, 0)::TEXT AS cantidad_esperada,
+                COALESCE(recep.cantidad_recibida, 0)::TEXT AS cantidad_recibida,
+                GREATEST(COALESCE(recep.cantidad_esperada, 0) - COALESCE(recep.cantidad_recibida, 0), 0)::TEXT AS cantidad_pendiente,
+                CASE
+                  WHEN COALESCE(recep.cantidad_esperada, 0) <= 0 THEN 'SIN_DETALLE'
+                  WHEN COALESCE(recep.cantidad_recibida, 0) <= 0 THEN 'PENDIENTE'
+                  WHEN COALESCE(recep.cantidad_recibida, 0) < COALESCE(recep.cantidad_esperada, 0) THEN 'PARCIAL'
+                  ELSE 'RECIBIDA'
+                END AS recepcion_estado`
+      : `NULL::TEXT AS cantidad_esperada,
+                NULL::TEXT AS cantidad_recibida,
+                NULL::TEXT AS cantidad_pendiente,
+                'PENDIENTE'::TEXT AS recepcion_estado`
+    const receptionJoin = supportsReceptionStatus
+      ? `LEFT JOIN (
+           SELECT d.ncompra_id,
+                  COALESCE(SUM(d.ncantidad), 0) AS cantidad_esperada,
+                  COALESCE(SUM(COALESCE(rec.recibido, 0)), 0) AS cantidad_recibida
+           FROM bot_compras_det d
+           LEFT JOIN (
+             SELECT rd.ncompra_det_id, SUM(rd.ncantidad_recibida) AS recibido
+             FROM bot_recepcion_det rd
+             GROUP BY rd.ncompra_det_id
+           ) rec ON rec.ncompra_det_id = d.nid
+           GROUP BY d.ncompra_id
+         ) recep ON recep.ncompra_id = c.nid`
+      : ''
 
     const missingMigrations = getMissingPurchaseMigrations(schemaStatus)
     if (missingMigrations.length > 0) {
@@ -144,10 +175,12 @@ export default async function purchasesRoutes(
                 ${selectAlmacenId},
                 ${selectTipoComprobante},
                 p.cnombre AS proveedor_nombre,
-                ${selectWarehouseFields}
+                ${selectWarehouseFields},
+                ${selectReceptionFields}
          FROM bot_compras c
          LEFT JOIN bot_proveedores p ON p.nid = c.nproveedor_id
          ${warehouseJoins}
+         ${receptionJoin}
          WHERE c.nid = $1`,
         [purchaseId],
       )
@@ -157,9 +190,18 @@ export default async function purchasesRoutes(
       }
 
       const detailResult = await fastify.db.query(
-        `SELECT d.*, pr.cnombre AS producto_nombre
+        `SELECT d.*, pr.cnombre AS producto_nombre,
+                COALESCE(rec.recibido, 0)::TEXT AS recibido_previo,
+                GREATEST(d.ncantidad - COALESCE(rec.recibido, 0), 0)::TEXT AS cantidad_pendiente
          FROM bot_compras_det d
          LEFT JOIN bot_productos pr ON pr.nid = d.nproducto_id
+         LEFT JOIN (
+           SELECT rd.ncompra_det_id, SUM(rd.ncantidad_recibida) AS recibido
+           FROM bot_recepcion_det rd
+           JOIN bot_recepciones r ON r.nid = rd.nrecepcion_id
+           WHERE r.ncompra_id = $1
+           GROUP BY rd.ncompra_det_id
+         ) rec ON rec.ncompra_det_id = d.nid
          WHERE d.ncompra_id = $1`,
         [purchaseId],
       )
@@ -173,9 +215,11 @@ export default async function purchasesRoutes(
               COALESCE(c.ctipo_pago, 'CONTADO') AS ctipo_pago,
               c.tfecha_vencimiento::TEXT       AS tfecha_vencimiento,
               c.tcreado::TEXT,
-              ${selectWarehouseFields}
+              ${selectWarehouseFields},
+              ${selectReceptionFields}
        FROM bot_compras c
        ${warehouseJoins}
+       ${receptionJoin}
        ORDER BY c.tcreado DESC
        LIMIT 50`,
     )
@@ -422,89 +466,12 @@ export default async function purchasesRoutes(
         const notasLote = String(item.notasLote || '').trim() || null
 
         await client.query(
-          `INSERT INTO bot_compras_det (ncompra_id, nproducto_id, ncantidad, npreunit, nsubtotal)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [compraId, productoId, cantidad, precioUnit, subtotal],
+          `INSERT INTO bot_compras_det
+             (ncompra_id, nproducto_id, ncantidad, npreunit, nsubtotal,
+              ccodigo_lote, dfecha_vencimiento, cnotas_lote)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::DATE, $8)`,
+          [compraId, productoId, cantidad, precioUnit, subtotal, codigoLote, fechaVencimiento, notasLote],
         )
-
-        if (productoId > 0) {
-          const stockPrevResult = await client.query<{ nstock: number }>(
-            'SELECT nstock FROM bot_productos WHERE nid = $1 FOR UPDATE',
-            [productoId],
-          )
-          const stockPrev = Number(stockPrevResult.rows[0]?.nstock ?? 0)
-
-          await client.query(
-            `UPDATE bot_productos
-             SET nstock = nstock + $1, nprecompra = $2, tmodifi = NOW()
-             WHERE nid = $3`,
-            [cantidad, precioUnit, productoId],
-          )
-
-          // UPSERT bot_lotes (obligatorio si el producto requiere lote — el front ya lo valida)
-          let loteId: number | null = null
-          if (codigoLote) {
-            const loteExistente = await client.query<{ nid: number }>(
-              `SELECT nid FROM bot_lotes
-               WHERE nproducto_id = $1 AND ccodigo_lote = $2 AND nalmacen_id = $3
-               FOR UPDATE`,
-              [productoId, codigoLote, almacenId],
-            )
-
-            if (loteExistente.rows.length > 0) {
-              loteId = loteExistente.rows[0].nid
-              await client.query(
-                `UPDATE bot_lotes
-                 SET ncantidad         = ncantidad + $1,
-                     ncantidad_inicial = ncantidad_inicial + $1,
-                     ncompra_id        = $2,
-                     nprecio_compra    = $3,
-                     tmodifi           = NOW()
-                 WHERE nid = $4`,
-                [cantidad, compraId, precioUnit, loteId],
-              )
-            } else {
-              const insertedLote = await client.query<{ nid: number }>(
-                `INSERT INTO bot_lotes
-                 (nproducto_id, ncompra_id, ccodigo_lote, dfechavencimiento,
-                  ncantidad, ncantidad_inicial, nprecio_compra, cestado, cnotas, nalmacen_id)
-                 VALUES ($1, $2, $3, $4::DATE, $5, $5, $6, 'ACTIVO', $7, $8)
-                 RETURNING nid`,
-                [productoId, compraId, codigoLote, fechaVencimiento, cantidad, precioUnit, notasLote, almacenId || null],
-              )
-              loteId = insertedLote.rows[0]?.nid ?? null
-            }
-          }
-
-          await client.query(
-            `INSERT INTO bot_kardex
-             (nproducto_id, nlote_id, ctipo, cref_tabla, nref_id, ncantidad,
-              nstock_anterior, nstock_nuevo, cdetalle, nusuario_id, cusuario, nalmacen_id)
-             VALUES ($1, $2, 'COMPRA', 'bot_compras', $3, $4, $5, $6, $7, $8, $9, $10)`,
-            [
-              productoId,
-              loteId,
-              compraId,
-              cantidad,
-              stockPrev,
-              stockPrev + cantidad,
-              `Compra ${codigo}`,
-              user.id,
-              user.nombre,
-              almacenId || null,
-            ],
-          )
-
-          // Registrar movimiento de almacén
-          if (almacenId > 0) {
-            await client.query(
-              `INSERT INTO bot_movimientos_almacen
-               (nproducto_id, nlote_id, nalmacen_destino_id, ctipo_movimiento, ncantidad, cdetalle, nusuario_id, cusuario)
-               VALUES ($1, $2, $3, 'COMPRA', $4, $5, $6, $7)`,
-              [productoId, loteId, almacenId, cantidad, `Compra ${codigo}`, user.id, user.nombre],
-            )
-          }
-        }
       }
 
       // CXP o egreso de caja según tipoPago
@@ -533,7 +500,7 @@ export default async function purchasesRoutes(
       await client.query(
         `INSERT INTO bot_auditoria (nusuario_id, cusuario, caccion, ctabla, nregistro_id, cdetalle)
          VALUES ($1, $2, 'COMPRA', 'bot_compras', $3, $4)`,
-        [user.id, user.nombre, compraId, `Compra ${codigo} S/${total} de ${proveedor} -> ${almacenDetalle}`],
+        [user.id, user.nombre, compraId, `Compra ${codigo} S/${total} de ${proveedor} -> ${almacenDetalle}. Stock pendiente de recepción.`],
       )
 
       await client.query('COMMIT')

@@ -47,6 +47,8 @@ describe('POST /api/v1/compras', () => {
   })
 
   function seedCompraOK(stockPrev = 20, loteExiste = false, cajaAbierta = true, seq = '1', compraId = 50) {
+    void stockPrev
+    void loteExiste
     mockClient.responses.push(
       {
         rows: [
@@ -78,24 +80,18 @@ describe('POST /api/v1/compras', () => {
       { rows: [{ seq }] },                                   // codigo sequence
       { rows: [{ nid: compraId }] },                         // purchase INSERT
       { rows: [] },                                           // compras_det INSERT
-      { rows: [{ nstock: stockPrev }] },                      // stock SELECT FOR UPDATE
-      { rows: [] },                                           // stock UPDATE
-      { rows: loteExiste ? [{ nid: 7 }] : [] },              // lote SELECT FOR UPDATE
-      { rows: loteExiste ? [] : [{ nid: 99 }] },             // lote INSERT (RETURNING) o UPDATE
-      { rows: [] },                                           // kardex INSERT
-      { rows: [] },                                           // movimiento_almacen INSERT
       { rows: cajaAbierta ? [] : [] },                       // caja_movimientos INSERT (solo si caja)
       { rows: [] },                                           // auditoria INSERT
     )
   }
 
-  it('✅ crea compra, aumenta stock y genera kardex COMPRA', async () => {
-    let kardexParams: unknown[] | null = null
+  it('✅ crea compra como documento y deja stock pendiente de recepción', async () => {
+    let detalleParams: unknown[] | null = null
 
     const originalQuery = mockClient.query.bind(mockClient)
     mockClient.query = async (sql: string, params?: unknown[]) => {
-      if (sql.includes('bot_kardex') && sql.includes('COMPRA')) {
-        kardexParams = params ?? null
+      if (sql.includes('INSERT INTO bot_compras_det')) {
+        detalleParams = params ?? null
       }
       return originalQuery(sql, params)
     }
@@ -113,13 +109,13 @@ describe('POST /api/v1/compras', () => {
     expect(res.json().ok).toBe(true)
     expect(res.json().codigo).toMatch(/^CMP-/)
 
-    expect(kardexParams).not.toBeNull()
-    const kp = (kardexParams as unknown) as unknown[]
-    // Nuevo orden: [productoId, nloteId, compraId, cantidad, stockPrev, stockNew, detalle, userId, userName, almacenId]
-    const stockPrev = Number(kp[4])
-    const stockNew = Number(kp[5])
-    expect(stockNew).toBe(stockPrev + 50)
-    expect(kp[1]).toBeTruthy() // nlote_id presente en kardex
+    expect(detalleParams).not.toBeNull()
+    const dp = (detalleParams as unknown) as unknown[]
+    expect(dp[5]).toBe('L-CMP-001')
+    expect(dp[6]).toBe('2027-01-01')
+    expect(mockClient.queries.some((query) => query.sql.includes('INSERT INTO bot_kardex'))).toBe(false)
+    expect(mockClient.queries.some((query) => query.sql.includes('UPDATE bot_productos'))).toBe(false)
+    expect(mockClient.queries.some((query) => query.sql.includes('INSERT INTO bot_lotes'))).toBe(false)
   })
 
   it('✅ genera codigo con secuencia y no usa COUNT(*) + 1', async () => {
@@ -162,7 +158,7 @@ describe('POST /api/v1/compras', () => {
     expect(first.json().codigo).not.toBe(second.json().codigo)
   })
 
-  it('✅ crea lote nuevo si no existía (INSERT bot_lotes)', async () => {
+  it('✅ no crea lote al registrar compra: lote se crea en recepción', async () => {
     let loteInserted = false
 
     const originalQuery = mockClient.query.bind(mockClient)
@@ -182,10 +178,10 @@ describe('POST /api/v1/compras', () => {
       payload: BASE_BODY,
     })
 
-    expect(loteInserted).toBe(true)
+    expect(loteInserted).toBe(false)
   })
 
-  it('✅ actualiza lote existente (UPDATE bot_lotes) si codigoLote ya está registrado', async () => {
+  it('✅ no actualiza lote al registrar compra: recepción actualiza stock físico', async () => {
     let loteUpdated = false
 
     const originalQuery = mockClient.query.bind(mockClient)
@@ -205,7 +201,7 @@ describe('POST /api/v1/compras', () => {
       payload: BASE_BODY,
     })
 
-    expect(loteUpdated).toBe(true)
+    expect(loteUpdated).toBe(false)
   })
 
   it('✅ permite compra de producto sin lote ni vencimiento cuando no los requiere', async () => {
@@ -240,10 +236,6 @@ describe('POST /api/v1/compras', () => {
       { rows: [{ today: '20260411' }] },
       { rows: [{ seq: '1' }] },
       { rows: [{ nid: 50 }] },
-      { rows: [] },
-      { rows: [{ nstock: 20 }] },
-      { rows: [] },
-      { rows: [] },
       { rows: [] },
       { rows: [] },
       { rows: [] },
@@ -318,12 +310,6 @@ describe('POST /api/v1/compras', () => {
       { rows: [{ today: '20260411' }] },
       { rows: [{ seq: '1' }] },
       { rows: [{ nid: 50 }] },
-      { rows: [] },
-      { rows: [{ nstock: 20 }] },
-      { rows: [] },
-      { rows: [] },
-      { rows: [{ nid: 99 }] },
-      { rows: [] },
       { rows: [] },
       { rows: [] },
       { rows: [] },
@@ -402,19 +388,6 @@ describe('POST /api/v1/compras', () => {
 
     expect(res.statusCode).toBe(400)
     expect(res.json().message).toBe('Debe ingresar el número de comprobante')
-  })
-
-  it('❌ rechaza cantidades fraccionarias de inventario', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/v1/compras',
-      headers: { Authorization: `Bearer ${token}` },
-      payload: { ...BASE_BODY, items: [{ ...BASE_ITEM, cantidad: 1.5 }] },
-    })
-
-    expect(res.statusCode).toBe(400)
-    expect(res.json().message).toBe('La cantidad de cada producto debe ser mayor a 0')
-    expect(mockClient.queries).toHaveLength(0)
   })
 
   it('❌ informa comprobante duplicado protegido por índice único', async () => {

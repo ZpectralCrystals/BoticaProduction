@@ -1,16 +1,17 @@
 export type AppSection =
   | 'dashboard'
   | 'inventario'
+  | 'inventario-inicial'
   | 'ventas'
   | 'caja'
   | 'compras'
+  | 'recepcion'
   | 'proveedores'
   | 'pacientes'
   | 'procedimientos'
   | 'medicos'
   | 'reportes'
   | 'transferencias'
-  | 'alquileres'
   | 'deudores'
   | 'inventario-var'
   | 'auditoria'
@@ -26,16 +27,17 @@ export type AppSection =
 export const sectionPaths: Record<AppSection, string> = {
   dashboard: '/panel',
   inventario: '/panel/inventario',
+  'inventario-inicial': '/panel/inventario-inicial',
   ventas: '/panel/ventas',
   caja: '/panel/caja',
   compras: '/panel/compras',
+  recepcion: '/panel/recepcion',
   proveedores: '/panel/proveedores',
   pacientes: '/panel/pacientes',
   procedimientos: '/panel/procedimientos',
   medicos: '/panel/medicos',
   reportes: '/panel/reportes',
   transferencias: '/panel/transferencias',
-  alquileres: '/panel/alquileres',
   deudores: '/panel/deudores',
   'inventario-var': '/panel/inventario-var',
   auditoria: '/panel/auditoria',
@@ -54,7 +56,8 @@ export function getSectionFromPath(pathname: string): AppSection | null {
     return 'dashboard'
   }
 
-  const entries = Object.entries(sectionPaths) as [AppSection, string][]
+  const entries = (Object.entries(sectionPaths) as [AppSection, string][])
+    .sort((a, b) => b[1].length - a[1].length)
   for (const [section, path] of entries) {
     if (section !== 'dashboard' && pathname.startsWith(path)) {
       return section
