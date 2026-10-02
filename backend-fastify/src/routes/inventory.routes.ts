@@ -850,7 +850,12 @@ export default async function inventoryRoutes(
   fastify.get('/', { preHandler: fastify.requireAuth }, async (request) => {
     const query = request.query as { search?: string; limit?: string; sucursal_id?: string }
     const searchTerm = String(query.search || '').trim()
-    const limit = Number(query.limit || 50)
+    // The inventory screen filters the full catalog locally. Only search
+    // consumers that explicitly request a limit should receive a subset.
+    const requestedLimit = Number(query.limit)
+    const limit = query.limit === undefined
+      ? null
+      : Number.isFinite(requestedLimit) ? Math.max(1, Math.min(Math.trunc(requestedLimit), 1000)) : 50
 
     let sql = `
       SELECT p.nid, p.ccodigo, p.cnombre, p.cgenerico, p.ccategoria, p.cfamilia,
@@ -896,8 +901,11 @@ export default async function inventoryRoutes(
       params.push(term, term, term)
     }
 
-    sql += ` ORDER BY p.cnombre LIMIT $${params.length + 1}`
-    params.push(limit)
+    sql += ' ORDER BY p.cnombre'
+    if (limit !== null) {
+      sql += ` LIMIT $${params.length + 1}`
+      params.push(limit)
+    }
 
     const result = await fastify.db.query(sql, params)
 

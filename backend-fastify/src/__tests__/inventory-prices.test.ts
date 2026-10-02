@@ -19,6 +19,39 @@ async function buildApp(mockClient: ReturnType<typeof createMockClient>): Promis
   return app
 }
 
+describe('GET /api/v1/inventario catalogo completo', () => {
+  let app: FastifyInstance
+  let mockClient: ReturnType<typeof createMockClient>
+  let token: string
+
+  beforeEach(async () => {
+    mockClient = createMockClient()
+    app = await buildApp(mockClient)
+    token = makeTestToken(app)
+  })
+
+  afterEach(async () => { await app.close() })
+
+  it('no oculta productos posteriores al número 50 en el listado general', async () => {
+    mockClient.responses.push({ rows: Array.from({ length: 60 }, (_, i) => ({
+      nid: i + 1, ccodigo: `REG-${i + 1}`, cnombre: `Producto ${i + 1}`, nstock: 1,
+    })) })
+    const response = await app.inject({ method: 'GET', url: '/api/v1/inventario', headers: { Authorization: `Bearer ${token}` } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toHaveLength(60)
+    expect(response.json()[59]).toMatchObject({ codigo: 'REG-60', stock: 1 })
+    expect(mockClient.queries[0].sql).not.toMatch(/LIMIT/i)
+    expect(mockClient.queries[0].params).toEqual([])
+  })
+
+  it('conserva límite explícito y búsqueda parametrizada', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/v1/inventario?search=REG&limit=5', headers: { Authorization: `Bearer ${token}` } })
+    expect(response.statusCode).toBe(200)
+    expect(mockClient.queries[0].sql).toContain('LIMIT $4')
+    expect(mockClient.queries[0].params).toEqual(['%REG%', '%REG%', '%REG%', 5])
+  })
+})
+
 describe('POST /api/v1/inventario action updatePrices', () => {
   let app: FastifyInstance
   let mockClient: ReturnType<typeof createMockClient>
