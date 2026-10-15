@@ -69,7 +69,7 @@ function parseCsv(text: string): { rows: ApiInitialInventoryRow[]; errors: ApiIn
   const headers = splitCsvLine(headerLine, delimiter).cells.map(header =>
     templateHeaders.find(name => name.toLowerCase() === header.toLowerCase()) ?? header,
   )
-  for (const name of ['nombre', 'stock', 'precioVenta1']) {
+  for (const name of ['nombre']) {
     if (!headers.includes(name)) errors.push({ row: 1, message: `Falta columna obligatoria: ${name}` })
   }
   if (new Set(headers).size !== headers.length) errors.push({ row: 1, message: 'Hay encabezados repetidos' })
@@ -92,7 +92,6 @@ function parseCsv(text: string): { rows: ApiInitialInventoryRow[]; errors: ApiIn
     const num = (field: string) => {
       const value = (row[field] ?? '').trim()
       if (!value) {
-        if (field === 'stock' || field === 'precioVenta1') addError(`${field} obligatorio`)
         return undefined
       }
       const normalized = value.replace(',', '.')
@@ -104,7 +103,6 @@ function parseCsv(text: string): { rows: ApiInitialInventoryRow[]; errors: ApiIn
       if ((field === 'stock' || field === 'stockMin') && !Number.isSafeInteger(number)) {
         addError(`${field} debe ser entero mayor o igual a cero`)
       }
-      if (field === 'precioVenta1' && number <= 0) addError('precioVenta1 debe ser mayor a cero')
       return number
     }
     if (!row.nombre) addError('nombre obligatorio')
@@ -232,7 +230,7 @@ export function IngresoInventarioInicialPage() {
         </div>
 
         <p className="text-sm text-muted">
-          Pegue CSV o una tabla de Excel con encabezados. Obligatorios: nombre, stock y precioVenta1.
+          Pegue CSV o una tabla de Excel con encabezados. Solo nombre es obligatorio; campos pendientes pueden editarse después.
           Las demás columnas son opcionales; medicamentos con stock requieren lote y vencimiento (AAAA-MM-DD).
           Precios con punto o coma decimal, sin separador de miles. Máximo 300 productos por carga.
         </p>

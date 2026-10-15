@@ -196,10 +196,10 @@ export interface ApiInitialInventoryRow {
   categoria?: string
   presentacion?: string
   laboratorio?: string
-  stock: number
+  stock?: number
   stockMin?: number
   costo?: number
-  precioVenta1: number
+  precioVenta1?: number
   precioVenta2?: number | null
   precioVenta3?: number | null
   lote?: string

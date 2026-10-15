@@ -329,10 +329,6 @@ export function InventoryPage() {
       toast.error('Precios de venta invalidos')
       return
     }
-    if (precioVenta1 <= 0) {
-      toast.error('Precio venta 1 debe ser mayor a cero')
-      return
-    }
     if (formComponents.some(row => !row.componentId && (row.concentracion.trim() || row.forma.trim() || row.notas.trim()))) {
       toast.error('Selecciona el componente para cada fila de composición')
       return
@@ -351,10 +347,6 @@ export function InventoryPage() {
       return
     }
     const composicion = summarizeFormComponents(formComponents) || (!medicamento ? form.generico.trim() : '')
-    if (medicamento && !composicion) {
-      toast.error('Agrega al menos un principio activo o composición')
-      return
-    }
     setSaving(true)
     try {
       const payload: Record<string, unknown> = {

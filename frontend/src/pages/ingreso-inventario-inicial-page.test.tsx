@@ -52,10 +52,12 @@ describe('Ingreso inicial de inventario', () => {
     expect(apiCargaInicialInventario).not.toHaveBeenCalled()
   })
 
-  it('explica encabezados faltantes en lugar de fallar al editar', () => {
+  it('permite precio pendiente y lo envía como cero', async () => {
     enterCsv('nombre;stock\nProducto prueba;2')
-    expect(screen.getByText(/Falta columna obligatoria: precioVenta1/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Guardar ingreso inicial' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar ingreso inicial' }))
+    await waitFor(() => expect(apiCargaInicialInventario).toHaveBeenCalledWith([
+      expect.objectContaining({ nombre: 'Producto prueba', stock: 2, precioVenta1: 0 }),
+    ]))
   })
 
   it('rechaza filas desplazadas por separadores adicionales', () => {

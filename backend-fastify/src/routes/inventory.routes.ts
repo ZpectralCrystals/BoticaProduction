@@ -125,7 +125,7 @@ function validateInitialLoadRows(rows: ReturnType<typeof normalizeStockInitialRo
     if (!row.nombre) errors.push({ row: row.rowNumber, message: `${prefix} nombre obligatorio` })
     if (!Number.isInteger(row.stock) || row.stock < 0) errors.push({ row: row.rowNumber, message: `${prefix} stock debe ser entero >= 0` })
     if (!Number.isFinite(row.costo) || row.costo < 0) errors.push({ row: row.rowNumber, message: `${prefix} costo invalido` })
-    if (!Number.isFinite(row.precioVenta1) || row.precioVenta1 <= 0) errors.push({ row: row.rowNumber, message: `${prefix} precioVenta1 debe ser > 0` })
+    if (!Number.isFinite(row.precioVenta1) || row.precioVenta1 < 0) errors.push({ row: row.rowNumber, message: `${prefix} precioVenta1 debe ser >= 0` })
     if (row.precioVenta2 === undefined || row.precioVenta3 === undefined) errors.push({ row: row.rowNumber, message: `${prefix} precio venta opcional invalido` })
     if (!['Alta', 'Media', 'Baja'].includes(row.rotacion)) errors.push({ row: row.rowNumber, message: `${prefix} rotacion debe ser Alta, Media o Baja` })
     if (row.codigo) {
@@ -1020,6 +1020,8 @@ export default async function inventoryRoutes(
         const categoryId = Number(category.nid)
         const categoryName = category.cnombre.trim()
         const expiresAt = row.vencimiento || null
+        const expiredInitialLot = Boolean(expiresAt && expiresAt < new Date().toISOString().slice(0, 10))
+        const availableStock = expiredInitialLot ? 0 : row.stock
         const precioVenta2 = row.precioVenta2 ?? null
         const precioVenta3 = row.precioVenta3 ?? null
 
@@ -1052,7 +1054,7 @@ export default async function inventoryRoutes(
             row.precioVenta1.toFixed(2),
             precioVenta2 === null ? null : precioVenta2.toFixed(2),
             precioVenta3 === null ? null : precioVenta3.toFixed(2),
-            row.stock,
+            availableStock,
             row.stockMin,
             row.ubicacion || null,
             row.rotacion,
@@ -1087,7 +1089,7 @@ export default async function inventoryRoutes(
             `INSERT INTO bot_lotes
                (nproducto_id, nalmacen_id, ccodigo_lote, ncantidad, ncantidad_inicial,
                 nprecio_compra, dfechavencimiento, cestado, cnotas)
-             VALUES ($1, $2, $3, $4, $4, $5, $6, 'ACTIVO', $7)
+             VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8)
              RETURNING nid`,
             [
               productId,
@@ -1096,13 +1098,16 @@ export default async function inventoryRoutes(
               row.stock,
               row.costo.toFixed(2),
               row.vencimiento,
-              'Carga inicial de inventario',
+              expiredInitialLot ? 'VENCIDO' : 'ACTIVO',
+              expiredInitialLot
+                ? 'Carga inicial: stock vencido, excluido de venta'
+                : 'Carga inicial de inventario',
             ],
           )
           loteId = Number(lote.rows[0].nid)
         }
 
-        if (row.stock > 0) {
+        if (availableStock > 0) {
           await client.query(
             `INSERT INTO bot_kardex
                (nproducto_id, ctipo, cref_tabla, nref_id, nlote_id, ccodigo_lote,
@@ -1116,7 +1121,7 @@ export default async function inventoryRoutes(
               loteId,
               row.lote || null,
               almacenId,
-              row.stock,
+              availableStock,
               `Carga inicial: ${row.nombre}`,
               user.id,
               user.nombre,
@@ -1253,7 +1258,6 @@ export default async function inventoryRoutes(
     const requestedPrecioVenta2 = parseOptionalPrice(body.precioVenta2)
     const requestedPrecioVenta3 = parseOptionalPrice(body.precioVenta3)
     const componentsProvided = Object.prototype.hasOwnProperty.call(body, 'componentes')
-    const hasUsableComponents = Array.isArray(body.componentes) && body.componentes.length > 0
     const isMedicine = requestedTipoProducto === 'MEDICAMENTO'
 
     if (!requestedName) {
@@ -1261,9 +1265,6 @@ export default async function inventoryRoutes(
     }
     if (requestedCode.length > 20) {
       return reply.code(400).send({ error: 'CODIGO DEBE TENER MAXIMO 20 CARACTERES' })
-    }
-    if (isMedicine && !requestedGenerico && !hasUsableComponents) {
-      return reply.code(400).send({ error: 'COMPOSICION ES OBLIGATORIA' })
     }
     if (!Number.isFinite(requestedPrecioVenta1) || requestedPrecioVenta1 < 0 || requestedPrecioVenta2 === undefined || requestedPrecioVenta3 === undefined) {
       return reply.code(400).send({ error: 'PRECIOS INVALIDOS' })
@@ -1273,9 +1274,6 @@ export default async function inventoryRoutes(
     }
     if (!Number.isInteger(Number(body.stock || 0)) || Number(body.stock || 0) < 0 || !Number.isInteger(Number(body.minStock || 0)) || Number(body.minStock || 0) < 0) {
       return reply.code(400).send({ error: 'STOCK INVALIDO' })
-    }
-    if (requestedPrecioVenta1 <= 0) {
-      return reply.code(400).send({ error: 'PRECIO VENTA 1 DEBE SER MAYOR A CERO' })
     }
 
     const supplierId = Number(body.supplierId || body.proveedorId || 0)

@@ -256,7 +256,7 @@ describe('POST /api/v1/inventario tipoProducto', () => {
     await app.close()
   })
 
-  it('mantiene composicion obligatoria para medicamento', async () => {
+  it('permite composición pendiente para medicamento', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/inventario',
@@ -271,10 +271,10 @@ describe('POST /api/v1/inventario tipoProducto', () => {
     })
 
     expect(res.statusCode).toBe(400)
-    expect(res.json().error).toBe('COMPOSICION ES OBLIGATORIA')
+    expect(res.json().error).toBe('CATEGORIA NO ENCONTRADA')
   })
 
-  it('permite producto no medicamento sin composicion obligatoria', async () => {
+  it('permite precio cero pendiente para producto no medicamento', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/inventario',
@@ -289,7 +289,7 @@ describe('POST /api/v1/inventario tipoProducto', () => {
     })
 
     expect(res.statusCode).toBe(400)
-    expect(res.json().error).toBe('PRECIO VENTA 1 DEBE SER MAYOR A CERO')
+    expect(res.json().error).toBe('CATEGORIA NO ENCONTRADA')
   })
 })
 
