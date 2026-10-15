@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Search, ChevronDown, ChevronRight, Warehouse, BadgeDollarSign, History, Pencil, Trash2, Plus, X, Upload } from 'lucide-react'
+import { Search, ChevronDown, ChevronRight, Warehouse, BadgeDollarSign, History, Pencil, Trash2, Plus, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
   apiGetInventory, apiGetProveedores, apiAddProduct, apiUpdateProduct, apiDeleteProduct, apiGetDistribucion, apiGetLocales, apiUpdateProductPrices,
@@ -658,9 +658,6 @@ export function InventoryPage() {
               </div>
               {canManageInventory && (
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => navigate('/panel/inventario-inicial')}>
-                    <Upload className="h-4 w-4" /> Ingreso por primera vez
-                  </Button>
                   <Button onClick={startCreate}><Plus className="h-4 w-4" /> Nuevo producto</Button>
                 </div>
               )}
