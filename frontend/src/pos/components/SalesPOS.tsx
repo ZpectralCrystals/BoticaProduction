@@ -102,7 +102,10 @@ export function SalesPOS() {
   return (
     <div className="h-full flex flex-col gap-4">
       {/* Header */}
-      <div className="bg-surface rounded-xl shadow-sm border border-border p-4">
+      <div
+        data-testid="sales-desktop-header"
+        className="hidden sm:block bg-surface rounded-xl shadow-sm border border-border p-4"
+      >
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-primary">Terminal de Venta — Botica El Pueblo</h1>
