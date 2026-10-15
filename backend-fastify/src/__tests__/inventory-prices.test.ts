@@ -129,6 +129,118 @@ describe('POST /api/v1/inventario action updatePrices', () => {
   })
 })
 
+describe('DELETE /api/v1/inventario/:id', () => {
+  let app: FastifyInstance
+  let mockClient: ReturnType<typeof createMockClient>
+  let token: string
+
+  beforeEach(async () => {
+    mockClient = createMockClient()
+    app = await buildApp(mockClient)
+    token = makeTestToken(app)
+  })
+
+  afterEach(async () => { await app.close() })
+
+  it('retira del catalogo producto sin stock y conserva historial', async () => {
+    mockClient.responses.push(
+      { rows: [{ nid: 7, ccodigo: 'MED-007', cnombre: 'Producto prueba', nstock: 0, stock_lotes: 0 }] },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+    )
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/inventario/7',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ ok: true, id: '7', deleted: true })
+    const sql = mockClient.queries.map((query) => query.sql).join('\n')
+    expect(sql).toContain("UPDATE bot_productos SET cestado = 'I'")
+    expect(sql).toContain('UPDATE bot_producto_precios SET lactivo = FALSE')
+    expect(sql).toContain('ELIMINAR_PRODUCTO')
+    expect(sql).not.toContain('DELETE FROM bot_productos')
+  })
+
+  it('bloquea eliminacion si producto conserva stock', async () => {
+    mockClient.responses.push({
+      rows: [{ nid: 7, ccodigo: 'MED-007', cnombre: 'Producto prueba', nstock: 2, stock_lotes: 2 }],
+    })
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/inventario/7',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    expect(response.statusCode).toBe(409)
+    expect(response.json().error).toBe('PRODUCTO TIENE STOCK')
+    expect(mockClient.queries.some((query) => query.sql.includes("SET cestado = 'I'"))).toBe(false)
+  })
+})
+
+describe('POST /api/v1/inventario action update', () => {
+  let app: FastifyInstance
+  let mockClient: ReturnType<typeof createMockClient>
+  let token: string
+
+  beforeEach(async () => {
+    mockClient = createMockClient()
+    app = await buildApp(mockClient)
+    token = makeTestToken(app)
+  })
+
+  afterEach(async () => { await app.close() })
+
+  it('permite al admin editar codigo, costo y stock sin lote', async () => {
+    mockClient.responses.push(
+      { rows: [{ nid: 3, cnombre: 'Material medico', nfamilia_id: null, familia_nombre: null }] },
+      { rows: [{ nid: 7, ccodigo: 'ANT-007', nprecompra: 1, nstock: 0, nstockmin: 1, stock_lotes: 0 }] },
+      { rows: [] },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+    )
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventario',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        action: 'update',
+        id: '7',
+        codigo: 'NUEVO-007',
+        name: 'Producto actualizado',
+        tipoProducto: 'NO_MEDICAMENTO',
+        categoryId: 3,
+        generico: 'Descripción libre',
+        precioCompra: 4.5,
+        precioVenta1: 8,
+        precioVenta2: null,
+        precioVenta3: 9,
+        stock: 3,
+        minStock: 1,
+        requiereLote: false,
+        requiereVencimiento: false,
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ ok: true, id: '7' })
+    const sql = mockClient.queries.map((query) => query.sql).join('\n')
+    expect(sql).toContain('update "bot_productos"')
+    expect(sql).toContain('"ccodigo"')
+    expect(sql).toContain('"nprecompra"')
+    expect(sql).toContain('"nstock"')
+    expect(sql).toContain('EDITAR_PRODUCTO')
+  })
+})
+
 describe('POST /api/v1/inventario tipoProducto', () => {
   let app: FastifyInstance
   let mockClient: ReturnType<typeof createMockClient>

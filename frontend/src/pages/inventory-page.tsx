@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { Search, ChevronDown, ChevronRight, Warehouse, BadgeDollarSign, History, Pencil, Trash2, Plus, X, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
-  apiGetInventory, apiGetProveedores, apiAddProduct, apiUpdateProduct, apiGetDistribucion, apiGetLocales, apiUpdateProductPrices,
+  apiGetInventory, apiGetProveedores, apiAddProduct, apiUpdateProduct, apiDeleteProduct, apiGetDistribucion, apiGetLocales, apiUpdateProductPrices,
   apiGetPrecioHistorial,
   apiGetFamiliasProducto, apiCreateFamiliaProducto, apiUpdateFamiliaProducto, apiDeleteFamiliaProducto,
   apiGetCategoriasProducto, apiCreateCategoriaProducto, apiUpdateCategoriaProducto, apiDeleteCategoriaProducto,
@@ -18,7 +18,7 @@ import { Input, inputBaseClassName } from '@/components/ui/input'
 import { useAuth } from '@/context/auth-context'
 
 const emptyForm = {
-  name: '', tipoProducto: 'MEDICAMENTO', generico: '', category: 'Medicamentos', family: '', familyId: '', categoryId: '', presentacion: '',
+  codigo: '', name: '', tipoProducto: 'MEDICAMENTO', generico: '', category: 'Medicamentos', family: '', familyId: '', categoryId: '', presentacion: '',
   laboratorio: '', precioCompra: '', precioVenta1: '', precioVenta2: '', precioVenta3: '', stock: '', minStock: '',
   expiresAt: '', location: '', supplierId: '', rotation: 'Media', receta: 'N', requiereLote: 'S', requiereVencimiento: 'S',
 }
@@ -138,6 +138,8 @@ export function InventoryPage() {
   const [priceHistoryProduct, setPriceHistoryProduct] = useState<ApiInventoryItem | null>(null)
   const [priceHistory, setPriceHistory] = useState<ApiPrecioHistorial[]>([])
   const [priceHistoryLoading, setPriceHistoryLoading] = useState(false)
+  const [productToDelete, setProductToDelete] = useState<ApiInventoryItem | null>(null)
+  const [deletingProduct, setDeletingProduct] = useState(false)
 
   // Distribution state
   const [distData, setDistData] = useState<ApiDistribucionResponse | null>(null)
@@ -246,7 +248,7 @@ export function InventoryPage() {
     const categoryId = resolveCategoryId(p)
     setEditId(p.id)
     setForm({
-      name: p.name, tipoProducto: p.tipoProducto || 'MEDICAMENTO', generico: p.generico ?? '', category: p.category, family: p.family ?? '',
+      codigo: p.codigo, name: p.name, tipoProducto: p.tipoProducto || 'MEDICAMENTO', generico: p.generico ?? '', category: p.category, family: p.family ?? '',
       familyId, categoryId,
       presentacion: p.presentacion ?? '', laboratorio: p.laboratorio ?? '',
       precioCompra: formatMoneyInput(p.precioCompra),
@@ -309,14 +311,20 @@ export function InventoryPage() {
       return
     }
     const medicamento = isMedicamento(form.tipoProducto)
+    if (editId && !form.codigo.trim()) { toast.error('Código es obligatorio'); return }
     if (!form.name.trim()) { toast.error('Nombre es obligatorio'); return }
     if (!form.categoryId) { toast.error('Categoría es obligatoria'); return }
     const selectedFamily = familias.find(f => String(f.id) === form.familyId)
     const selectedCategory = categorias.find(c => String(c.id) === form.categoryId)
     if (!selectedCategory) { toast.error('Categoría inválida'); return }
     const precioVenta1 = Number(form.precioVenta1)
+    const precioCompra = Number(form.precioCompra || 0)
     const precioVenta2 = parseOptionalMoneyInput(form.precioVenta2)
     const precioVenta3 = parseOptionalMoneyInput(form.precioVenta3)
+    if (!Number.isFinite(precioCompra) || precioCompra < 0) {
+      toast.error('Precio de compra inválido')
+      return
+    }
     if (!Number.isFinite(precioVenta1) || precioVenta1 < 0 || precioVenta2 === undefined || precioVenta3 === undefined) {
       toast.error('Precios de venta invalidos')
       return
@@ -342,7 +350,7 @@ export function InventoryPage() {
       toast.error('No se puede repetir el mismo componente en el producto')
       return
     }
-    const composicion = summarizeFormComponents(formComponents)
+    const composicion = summarizeFormComponents(formComponents) || (!medicamento ? form.generico.trim() : '')
     if (medicamento && !composicion) {
       toast.error('Agrega al menos un principio activo o composición')
       return
@@ -350,6 +358,7 @@ export function InventoryPage() {
     setSaving(true)
     try {
       const payload: Record<string, unknown> = {
+        codigo: form.codigo.trim(),
         name: form.name,
         tipoProducto: form.tipoProducto,
         generico: composicion,
@@ -358,6 +367,7 @@ export function InventoryPage() {
         family: selectedFamily?.nombre || selectedCategory.familyName || '',
         category: selectedCategory.nombre,
         presentacion: form.presentacion, laboratorio: form.laboratorio,
+        precioCompra: Number(precioCompra.toFixed(2)),
         precioVenta1: Number(precioVenta1.toFixed(2)),
         precioVenta2,
         precioVenta3,
@@ -380,6 +390,21 @@ export function InventoryPage() {
       load()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Error') }
     finally { setSaving(false) }
+  }
+
+  const deleteSelectedProduct = async () => {
+    if (!canManageInventory || !productToDelete) return
+    setDeletingProduct(true)
+    try {
+      await apiDeleteProduct(productToDelete.id)
+      toast.success('Producto eliminado del catálogo')
+      setProductToDelete(null)
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar el producto')
+    } finally {
+      setDeletingProduct(false)
+    }
   }
 
   const submitPrice = async () => {
@@ -646,6 +671,10 @@ export function InventoryPage() {
             <DialogTitle>{editId ? 'Editar producto' : 'Nuevo producto'}</DialogTitle>
             <div className="mt-4 space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <label className="block space-y-1">
+                  <span className="text-sm font-semibold">Código{editId ? ' *' : ''}</span>
+                  <Input value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} placeholder="Automático si se deja vacío" />
+                </label>
                 <label className="block space-y-1 sm:col-span-2 lg:col-span-3">
                   <span className="text-sm font-semibold">Nombre comercial *</span>
                   <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Panadol Forte" />
@@ -758,6 +787,12 @@ export function InventoryPage() {
                     </div>
                   )}
                 </div>
+                {!isMedicamento(form.tipoProducto) && (
+                  <label className="block space-y-1 sm:col-span-2 lg:col-span-3">
+                    <span className="text-sm font-semibold">Descripción / composición libre</span>
+                    <Input value={form.generico} onChange={e => setForm({ ...form, generico: e.target.value })} placeholder="Material, composición o descripción" />
+                  </label>
+                )}
                 <label className="block space-y-1">
                   <span className="text-sm font-semibold">Requiere lote</span>
                   <select
@@ -791,8 +826,8 @@ export function InventoryPage() {
                   <Input value={form.laboratorio} onChange={e => setForm({ ...form, laboratorio: e.target.value })} placeholder="Genfar" />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-sm font-semibold">P. Compra (solo lectura)</span>
-                  <Input type="number" step="0.01" value={form.precioCompra} readOnly disabled placeholder="0.00" />
+                  <span className="text-sm font-semibold">Precio compra</span>
+                  <Input type="number" step="0.01" min="0" value={form.precioCompra} onChange={e => setForm({ ...form, precioCompra: e.target.value })} placeholder="0.00" />
                 </label>
                 <label className="block space-y-1">
                   <span className="text-sm font-semibold">Precio venta 1</span>
@@ -807,12 +842,9 @@ export function InventoryPage() {
                   <Input type="number" step="0.01" min="0" value={form.precioVenta3} onChange={e => setForm({ ...form, precioVenta3: e.target.value })} placeholder="Opcional" />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-sm font-semibold">Stock{editId ? ' (solo lectura)' : ''}</span>
-                  {editId ? (
-                    <div className="px-4 py-3 border border-border rounded-lg bg-muted/30 text-foreground font-medium">{form.stock || '0'}</div>
-                  ) : (
-                    <Input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} placeholder="0" />
-                  )}
+                  <span className="text-sm font-semibold">Stock</span>
+                  <Input type="number" min="0" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} placeholder="0" />
+                  {editId && form.requiereLote === 'S' && <span className="text-xs text-muted">Si existen lotes, ajusta cantidades desde inventario avanzado.</span>}
                 </label>
                 <label className="block space-y-1">
                   <span className="text-sm font-semibold">Stock minimo</span>
@@ -854,6 +886,24 @@ export function InventoryPage() {
                 <Button variant="outline" onClick={() => setShowDialog(false)}>Cancelar</Button>
               </div>
             </div>
+          </Dialog>
+
+          <Dialog open={!!productToDelete} onClose={() => !deletingProduct && setProductToDelete(null)} className="max-w-lg">
+            <DialogTitle>Eliminar producto</DialogTitle>
+            {productToDelete && (
+              <div className="mt-4 space-y-4">
+                <p className="text-sm text-muted">
+                  Se retirará <strong className="text-foreground">{productToDelete.name}</strong> ({productToDelete.codigo}) del catálogo.
+                  Historial comercial se conserva. Producto con stock o lotes activos no puede eliminarse.
+                </p>
+                <div className="flex justify-end gap-3">
+                  <Button variant="outline" onClick={() => setProductToDelete(null)} disabled={deletingProduct}>Cancelar</Button>
+                  <Button className="border-red-600 bg-red-600 shadow-none hover:bg-red-700" onClick={deleteSelectedProduct} disabled={deletingProduct}>
+                    {deletingProduct ? 'Eliminando...' : 'Eliminar producto'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </Dialog>
 
           <Dialog open={!!priceProduct} onClose={closePriceDialog} className="max-w-4xl">
@@ -1086,6 +1136,18 @@ export function InventoryPage() {
                                 onClick={() => startPriceEdit(item)}
                               >
                                 <BadgeDollarSign className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {canManageInventory && (
+                              <Button
+                                aria-label={`Eliminar ${item.name}`}
+                                className="h-8 w-8 rounded-full p-0 text-red-600 hover:text-red-700"
+                                size="icon"
+                                title="Eliminar producto"
+                                variant="outline"
+                                onClick={() => setProductToDelete(item)}
+                              >
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             )}
                             <Button

@@ -1244,9 +1244,11 @@ export default async function inventoryRoutes(
       }
     }
 
+    const requestedCode = readTrimmedName(body.codigo)
     const requestedName = String(body.name || '').trim()
     const requestedTipoProducto = normalizeProductType(body.tipoProducto)
     const requestedGenerico = String(body.generico || '').trim()
+    const requestedPrecioCompra = Number(body.precioCompra ?? 0)
     const requestedPrecioVenta1 = Number(body.precioVenta1 ?? body.precioVenta ?? 0)
     const requestedPrecioVenta2 = parseOptionalPrice(body.precioVenta2)
     const requestedPrecioVenta3 = parseOptionalPrice(body.precioVenta3)
@@ -1257,11 +1259,20 @@ export default async function inventoryRoutes(
     if (!requestedName) {
       return reply.code(400).send({ error: 'NOMBRE ES OBLIGATORIO' })
     }
+    if (requestedCode.length > 20) {
+      return reply.code(400).send({ error: 'CODIGO DEBE TENER MAXIMO 20 CARACTERES' })
+    }
     if (isMedicine && !requestedGenerico && !hasUsableComponents) {
       return reply.code(400).send({ error: 'COMPOSICION ES OBLIGATORIA' })
     }
     if (!Number.isFinite(requestedPrecioVenta1) || requestedPrecioVenta1 < 0 || requestedPrecioVenta2 === undefined || requestedPrecioVenta3 === undefined) {
       return reply.code(400).send({ error: 'PRECIOS INVALIDOS' })
+    }
+    if (!Number.isFinite(requestedPrecioCompra) || requestedPrecioCompra < 0) {
+      return reply.code(400).send({ error: 'PRECIO COMPRA INVALIDO' })
+    }
+    if (!Number.isInteger(Number(body.stock || 0)) || Number(body.stock || 0) < 0 || !Number.isInteger(Number(body.minStock || 0)) || Number(body.minStock || 0) < 0) {
+      return reply.code(400).send({ error: 'STOCK INVALIDO' })
     }
     if (requestedPrecioVenta1 <= 0) {
       return reply.code(400).send({ error: 'PRECIO VENTA 1 DEBE SER MAYOR A CERO' })
@@ -1292,6 +1303,7 @@ export default async function inventoryRoutes(
       : ''
 
     const payload = {
+      codigo: requestedCode,
       name: requestedName,
       tipoProducto: requestedTipoProducto,
       generico: String(requestedGenerico || componentSummary || '').trim(),
@@ -1301,6 +1313,7 @@ export default async function inventoryRoutes(
       familyId: catalogSelection.familyId,
       presentacion: String(body.presentacion || '').trim(),
       laboratorio: String(body.laboratorio || '').trim(),
+      precioCompra: requestedPrecioCompra,
       precioVenta1: requestedPrecioVenta1,
       precioVenta2: requestedPrecioVenta2,
       precioVenta3: requestedPrecioVenta3,
@@ -1327,10 +1340,49 @@ export default async function inventoryRoutes(
       const id = Number(body.id || 0)
       if (!id) return reply.code(400).send({ error: 'ID INVALIDO' })
 
+      const currentResult = await fastify.db.query<{
+        nid: number
+        ccodigo: string
+        nprecompra: number
+        nstock: number
+        nstockmin: number
+        stock_lotes: number
+      }>(
+        `SELECT p.nid, p.ccodigo, p.nprecompra, p.nstock, p.nstockmin,
+                COALESCE((SELECT SUM(l.ncantidad) FROM bot_lotes l
+                          WHERE l.nproducto_id = p.nid AND l.cestado = 'ACTIVO'), 0)::INT AS stock_lotes
+         FROM bot_productos p
+         WHERE p.nid = $1 AND p.cestado = 'A'`,
+        [id],
+      )
+      const current = currentResult.rows[0]
+      if (!current) return reply.code(404).send({ error: 'PRODUCTO NO ENCONTRADO' })
+
+      const code = payload.codigo || current.ccodigo.trim()
+      const duplicateCode = await fastify.db.query(
+        `SELECT nid FROM bot_productos
+         WHERE UPPER(BTRIM(ccodigo)) = UPPER(BTRIM($1)) AND nid <> $2
+         LIMIT 1`,
+        [code, id],
+      )
+      if (duplicateCode.rows[0]) return reply.code(409).send({ error: 'CODIGO YA EXISTE' })
+
+      const purchasePrice = Object.prototype.hasOwnProperty.call(body, 'precioCompra') ? payload.precioCompra : Number(current.nprecompra || 0)
+      const stock = Object.prototype.hasOwnProperty.call(body, 'stock') ? payload.stock : Number(current.nstock)
+      const minStock = Object.prototype.hasOwnProperty.call(body, 'minStock') ? payload.minStock : Number(current.nstockmin)
+      const stockChanged = stock !== Number(current.nstock)
+      if (stockChanged && payload.requiereLote && stock !== Number(current.stock_lotes)) {
+        return reply.code(409).send({
+          error: 'STOCK CONTROLADO POR LOTES',
+          message: 'El stock de productos con lote debe ajustarse desde inventario avanzado para conservar kardex y trazabilidad.',
+        })
+      }
+
       // DRIZZLE: actualizar producto por ID
       await fastify.drizzle
         .update(productos)
         .set({
+          ccodigo: code,
           cnombre: payload.name,
           ctipoProducto: payload.tipoProducto,
           cgenerico: payload.generico || null,
@@ -1340,10 +1392,12 @@ export default async function inventoryRoutes(
           ncategoriaId: payload.categoryId,
           cpresenta: payload.presentacion || null,
           claborat: payload.laboratorio || null,
+          nprecompra: String(purchasePrice),
           npreventa: String(payload.precioVenta1),
           npreventa2: payload.precioVenta2 === null ? null : String(payload.precioVenta2),
           npreventa3: payload.precioVenta3 === null ? null : String(payload.precioVenta3),
-          nstockmin: payload.minStock,
+          nstock: stock,
+          nstockmin: minStock,
           cubicacion: payload.location || null,
           nproveedorId: payload.supplierId,
           cproveedor: payload.supplierName || null,
@@ -1360,13 +1414,24 @@ export default async function inventoryRoutes(
       }
       await syncProductPrices(fastify, id, productPrices, request.authUser)
 
+      await fastify.db.query(
+        `INSERT INTO bot_auditoria (nusuario_id, cusuario, caccion, ctabla, nregistro_id, cdetalle)
+         VALUES ($1, $2, 'EDITAR_PRODUCTO', 'bot_productos', $3, $4)`,
+        [request.authUser?.id ?? null, request.authUser?.nombre ?? null, id, `Producto ${code} actualizado`],
+      )
+
       return { ok: true, id: String(id) }
     }
 
     // DRIZZLE: contar productos para generar código único
     const [countRow] = await fastify.drizzle.select({ cnt: count() }).from(productos)
     const sequence = Number(countRow?.cnt ?? 0) + 1
-    const code = `${payload.category.slice(0, 3).toUpperCase()}-${String(sequence).padStart(3, '0')}`
+    const code = payload.codigo || `${payload.category.slice(0, 3).toUpperCase()}-${String(sequence).padStart(3, '0')}`
+    const duplicateCode = await fastify.db.query(
+      `SELECT nid FROM bot_productos WHERE UPPER(BTRIM(ccodigo)) = UPPER(BTRIM($1)) LIMIT 1`,
+      [code],
+    )
+    if (duplicateCode.rows[0]) return reply.code(409).send({ error: 'CODIGO YA EXISTE' })
 
     // DRIZZLE: insertar nuevo producto
     const [inserted] = await fastify.drizzle
@@ -1382,6 +1447,7 @@ export default async function inventoryRoutes(
         ncategoriaId: payload.categoryId,
         cpresenta: payload.presentacion || null,
         claborat: payload.laboratorio || null,
+        nprecompra: String(payload.precioCompra),
         npreventa: String(payload.precioVenta1),
         npreventa2: payload.precioVenta2 === null ? null : String(payload.precioVenta2),
         npreventa3: payload.precioVenta3 === null ? null : String(payload.precioVenta3),
@@ -1403,6 +1469,71 @@ export default async function inventoryRoutes(
     await syncProductPrices(fastify, inserted.nid, productPrices, request.authUser)
 
     return { ok: true, id: String(inserted.nid), codigo: code }
+  })
+
+  fastify.delete('/:id', { preHandler: fastify.requireAuth }, async (request, reply) => {
+    const user = request.authUser
+    if (!user) return reply.code(401).send({ error: 'NO HA INICIADO SESION' })
+    if (!user.admin && !user.super) {
+      return reply.code(403).send({ error: 'SOLO ADMINISTRADOR PUEDE ELIMINAR PRODUCTOS' })
+    }
+
+    const id = Number((request.params as { id?: string }).id || 0)
+    if (!id) return reply.code(400).send({ error: 'ID INVALIDO' })
+
+    const client = await fastify.db.connect()
+    try {
+      await client.query('BEGIN')
+      const productResult = await client.query<{
+        nid: number
+        ccodigo: string
+        cnombre: string
+        nstock: number
+        stock_lotes: number
+      }>(
+        `SELECT p.nid, p.ccodigo, p.cnombre, p.nstock,
+                COALESCE((SELECT SUM(l.ncantidad) FROM bot_lotes l
+                          WHERE l.nproducto_id = p.nid AND l.cestado = 'ACTIVO'), 0)::INT AS stock_lotes
+         FROM bot_productos p
+         WHERE p.nid = $1 AND p.cestado = 'A'
+         FOR UPDATE`,
+        [id],
+      )
+      const product = productResult.rows[0]
+      if (!product) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'PRODUCTO NO ENCONTRADO' })
+      }
+      if (Number(product.nstock) !== 0 || Number(product.stock_lotes) !== 0) {
+        await client.query('ROLLBACK')
+        return reply.code(409).send({
+          error: 'PRODUCTO TIENE STOCK',
+          message: 'Deje el producto y sus lotes en stock cero antes de eliminarlo.',
+        })
+      }
+
+      await client.query(
+        `UPDATE bot_productos SET cestado = 'I', tmodifi = NOW() WHERE nid = $1`,
+        [id],
+      )
+      await client.query(
+        `UPDATE bot_producto_precios SET lactivo = FALSE, tmodifi = NOW() WHERE nproducto_id = $1`,
+        [id],
+      )
+      await client.query(
+        `INSERT INTO bot_auditoria (nusuario_id, cusuario, caccion, ctabla, nregistro_id, cdetalle)
+         VALUES ($1, $2, 'ELIMINAR_PRODUCTO', 'bot_productos', $3, $4)`,
+        [user.id, user.nombre, id, `Producto ${product.ccodigo.trim()} - ${product.cnombre.trim()} retirado del catálogo`],
+      )
+      await client.query('COMMIT')
+      return { ok: true, id: String(id), deleted: true }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      request.log.error({ error }, 'Error eliminando producto')
+      return reply.code(500).send({ error: 'NO SE PUDO ELIMINAR EL PRODUCTO' })
+    } finally {
+      client.release()
+    }
   })
 
   // GET /inventario/distribucion - Stock por almacén y lote

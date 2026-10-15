@@ -173,6 +173,12 @@ export function apiUpdateProduct(data: Partial<ApiInventoryItem> & { id: string 
   return requestV1<{ ok: boolean; id: string }>('/inventario', { method: 'POST', body: JSON.stringify({ action: 'update', ...data }) })
 }
 
+export function apiDeleteProduct(id: string) {
+  return requestV1<{ ok: boolean; id: string; deleted: boolean }>(`/inventario/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
 export function apiUpdateProductPrices(data: Pick<ApiInventoryItem, 'id' | 'precioVenta1' | 'precioVenta2' | 'precioVenta3'>) {
   return requestV1<{ ok: boolean; id: string }>('/inventario', {
     method: 'POST',

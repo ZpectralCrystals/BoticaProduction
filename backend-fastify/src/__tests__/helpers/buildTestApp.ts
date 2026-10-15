@@ -30,9 +30,10 @@ export function createMockClient() {
   const client = {
     responses,
     queries,
-    async query(sql: string, params?: unknown[]) {
-      queries.push({ sql, params })
-      const trimmed = sql.trim().toUpperCase()
+    async query(sql: string | { text: string }, params?: unknown[]) {
+      const sqlText = typeof sql === 'string' ? sql : sql.text
+      queries.push({ sql: sqlText, params })
+      const trimmed = sqlText.trim().toUpperCase()
       if (trimmed === 'BEGIN' || trimmed === 'COMMIT' || trimmed === 'ROLLBACK') {
         return { rows: [], rowCount: 0 }
       }
