@@ -311,7 +311,6 @@ export function InventoryPage() {
       return
     }
     const medicamento = isMedicamento(form.tipoProducto)
-    if (editId && !form.codigo.trim()) { toast.error('Código es obligatorio'); return }
     if (!form.name.trim()) { toast.error('Nombre es obligatorio'); return }
     if (!form.categoryId) { toast.error('Categoría es obligatoria'); return }
     const selectedFamily = familias.find(f => String(f.id) === form.familyId)
@@ -367,8 +366,8 @@ export function InventoryPage() {
         expiresAt: form.expiresAt, location: form.location,
         supplierId: parseInt(form.supplierId) || 0,
         rotation: form.rotation, receta: form.receta,
-        requiereLote: medicamento || form.requiereLote === 'S',
-        requiereVencimiento: medicamento || form.requiereVencimiento === 'S',
+        requiereLote: form.requiereLote === 'S',
+        requiereVencimiento: form.requiereVencimiento === 'S',
         componentes: componentPayload,
       }
       if (editId) {
@@ -661,8 +660,9 @@ export function InventoryPage() {
             <div className="mt-4 space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <label className="block space-y-1">
-                  <span className="text-sm font-semibold">Código{editId ? ' *' : ''}</span>
-                  <Input value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} placeholder="Automático si se deja vacío" />
+                  <span className="text-sm font-semibold">Código</span>
+                  <Input value={form.codigo} disabled placeholder="Se genera automáticamente" />
+                  <span className="text-xs text-muted">{editId ? 'Código permanente: no se puede modificar.' : 'Se asignará al crear el producto.'}</span>
                 </label>
                 <label className="block space-y-1 sm:col-span-2 lg:col-span-3">
                   <span className="text-sm font-semibold">Nombre comercial *</span>
@@ -786,8 +786,7 @@ export function InventoryPage() {
                   <span className="text-sm font-semibold">Requiere lote</span>
                   <select
                     className={inputBaseClassName}
-                    value={isMedicamento(form.tipoProducto) ? 'S' : form.requiereLote}
-                    disabled={isMedicamento(form.tipoProducto)}
+                    value={form.requiereLote}
                     onChange={e => setForm({ ...form, requiereLote: e.target.value })}
                   >
                     <option value="S">Si</option>
@@ -798,8 +797,7 @@ export function InventoryPage() {
                   <span className="text-sm font-semibold">Requiere vencimiento</span>
                   <select
                     className={inputBaseClassName}
-                    value={isMedicamento(form.tipoProducto) ? 'S' : form.requiereVencimiento}
-                    disabled={isMedicamento(form.tipoProducto)}
+                    value={form.requiereVencimiento}
                     onChange={e => setForm({ ...form, requiereVencimiento: e.target.value })}
                   >
                     <option value="S">Si</option>

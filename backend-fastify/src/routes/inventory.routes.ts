@@ -1249,7 +1249,6 @@ export default async function inventoryRoutes(
       }
     }
 
-    const requestedCode = readTrimmedName(body.codigo)
     const requestedName = String(body.name || '').trim()
     const requestedTipoProducto = normalizeProductType(body.tipoProducto)
     const requestedGenerico = String(body.generico || '').trim()
@@ -1258,13 +1257,9 @@ export default async function inventoryRoutes(
     const requestedPrecioVenta2 = parseOptionalPrice(body.precioVenta2)
     const requestedPrecioVenta3 = parseOptionalPrice(body.precioVenta3)
     const componentsProvided = Object.prototype.hasOwnProperty.call(body, 'componentes')
-    const isMedicine = requestedTipoProducto === 'MEDICAMENTO'
 
     if (!requestedName) {
       return reply.code(400).send({ error: 'NOMBRE ES OBLIGATORIO' })
-    }
-    if (requestedCode.length > 20) {
-      return reply.code(400).send({ error: 'CODIGO DEBE TENER MAXIMO 20 CARACTERES' })
     }
     if (!Number.isFinite(requestedPrecioVenta1) || requestedPrecioVenta1 < 0 || requestedPrecioVenta2 === undefined || requestedPrecioVenta3 === undefined) {
       return reply.code(400).send({ error: 'PRECIOS INVALIDOS' })
@@ -1301,7 +1296,6 @@ export default async function inventoryRoutes(
       : ''
 
     const payload = {
-      codigo: requestedCode,
       name: requestedName,
       tipoProducto: requestedTipoProducto,
       generico: String(requestedGenerico || componentSummary || '').trim(),
@@ -1326,8 +1320,14 @@ export default async function inventoryRoutes(
       requiereLote: true,
       requiereVencimiento: true,
     }
-    payload.requiereLote = isMedicine ? true : readBoolean(body.requiereLote ?? body.lrequiereLote, false)
-    payload.requiereVencimiento = isMedicine ? true : readBoolean(body.requiereVencimiento ?? body.lrequiereVencimiento, false)
+    payload.requiereLote = readBoolean(
+      body.requiereLote ?? body.lrequiereLote,
+      requestedTipoProducto === 'MEDICAMENTO',
+    )
+    payload.requiereVencimiento = readBoolean(
+      body.requiereVencimiento ?? body.lrequiereVencimiento,
+      requestedTipoProducto === 'MEDICAMENTO',
+    )
     const productPrices = {
       precioVenta1: payload.precioVenta1,
       precioVenta2: payload.precioVenta2 ?? null,
@@ -1356,14 +1356,7 @@ export default async function inventoryRoutes(
       const current = currentResult.rows[0]
       if (!current) return reply.code(404).send({ error: 'PRODUCTO NO ENCONTRADO' })
 
-      const code = payload.codigo || current.ccodigo.trim()
-      const duplicateCode = await fastify.db.query(
-        `SELECT nid FROM bot_productos
-         WHERE UPPER(BTRIM(ccodigo)) = UPPER(BTRIM($1)) AND nid <> $2
-         LIMIT 1`,
-        [code, id],
-      )
-      if (duplicateCode.rows[0]) return reply.code(409).send({ error: 'CODIGO YA EXISTE' })
+      const code = current.ccodigo.trim()
 
       const purchasePrice = Object.prototype.hasOwnProperty.call(body, 'precioCompra') ? payload.precioCompra : Number(current.nprecompra || 0)
       const stock = Object.prototype.hasOwnProperty.call(body, 'stock') ? payload.stock : Number(current.nstock)
@@ -1380,7 +1373,6 @@ export default async function inventoryRoutes(
       await fastify.drizzle
         .update(productos)
         .set({
-          ccodigo: code,
           cnombre: payload.name,
           ctipoProducto: payload.tipoProducto,
           cgenerico: payload.generico || null,
@@ -1424,7 +1416,7 @@ export default async function inventoryRoutes(
     // DRIZZLE: contar productos para generar código único
     const [countRow] = await fastify.drizzle.select({ cnt: count() }).from(productos)
     const sequence = Number(countRow?.cnt ?? 0) + 1
-    const code = payload.codigo || `${payload.category.slice(0, 3).toUpperCase()}-${String(sequence).padStart(3, '0')}`
+    const code = `${payload.category.slice(0, 3).toUpperCase()}-${String(sequence).padStart(3, '0')}`
     const duplicateCode = await fastify.db.query(
       `SELECT nid FROM bot_productos WHERE UPPER(BTRIM(ccodigo)) = UPPER(BTRIM($1)) LIMIT 1`,
       [code],

@@ -195,7 +195,7 @@ describe('POST /api/v1/inventario action update', () => {
 
   afterEach(async () => { await app.close() })
 
-  it('permite al admin editar codigo, costo y stock sin lote', async () => {
+  it('mantiene código inmutable y permite editar costo, stock y controles de lote', async () => {
     mockClient.responses.push(
       { rows: [{ nid: 3, cnombre: 'Material medico', nfamilia_id: null, familia_nombre: null }] },
       { rows: [{ nid: 7, ccodigo: 'ANT-007', nprecompra: 1, nstock: 0, nstockmin: 1, stock_lotes: 0 }] },
@@ -216,7 +216,7 @@ describe('POST /api/v1/inventario action update', () => {
         id: '7',
         codigo: 'NUEVO-007',
         name: 'Producto actualizado',
-        tipoProducto: 'NO_MEDICAMENTO',
+        tipoProducto: 'MEDICAMENTO',
         categoryId: 3,
         generico: 'Descripción libre',
         precioCompra: 4.5,
@@ -234,10 +234,13 @@ describe('POST /api/v1/inventario action update', () => {
     expect(response.json()).toEqual({ ok: true, id: '7' })
     const sql = mockClient.queries.map((query) => query.sql).join('\n')
     expect(sql).toContain('update "bot_productos"')
-    expect(sql).toContain('"ccodigo"')
+    const updateProduct = mockClient.queries.find((query) => query.sql.includes('update "bot_productos"'))
+    expect(updateProduct?.sql).not.toContain('"ccodigo"')
+    expect(updateProduct?.params).not.toContain('NUEVO-007')
     expect(sql).toContain('"nprecompra"')
     expect(sql).toContain('"nstock"')
     expect(sql).toContain('EDITAR_PRODUCTO')
+    expect(updateProduct?.params).toContain(false)
   })
 })
 
