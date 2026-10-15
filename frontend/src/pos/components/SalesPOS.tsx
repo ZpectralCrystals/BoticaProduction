@@ -175,6 +175,7 @@ export function SalesPOS() {
             customerMode={pos.customerMode}
             patients={pos.patients}
             selectedClinicalCustomerId={pos.clienteData.clinicalCustomerId}
+            showCustomerSection={false}
             metodoPago={pos.metodoPago}
             montoEfectivo={pos.montoEfectivo}
             montoDigital={pos.montoDigital}

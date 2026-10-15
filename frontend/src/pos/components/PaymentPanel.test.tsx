@@ -23,6 +23,13 @@ const baseProps = {
 }
 
 describe('PaymentPanel — pago mixto automático', () => {
+  it('oculta datos de cliente en ventas genéricas', () => {
+    render(<PaymentPanel {...baseProps} showCustomerSection={false} />)
+
+    expect(screen.queryByText('Cliente genérico')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Consumidor final')).not.toBeInTheDocument()
+  })
+
   it('calcula digital pendiente cuando efectivo no cubre total', () => {
     const onMontoDigitalChange = vi.fn()
 

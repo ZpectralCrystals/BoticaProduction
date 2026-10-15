@@ -3,7 +3,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Printer,
   Receipt,
   User,
   Calendar,
@@ -293,8 +292,8 @@ export function CheckoutModal({
                 </>
               ) : (
                 <>
-                  <Printer className="h-5 w-5" />
-                  Confirmar e Imprimir
+                  <CheckCircle2 className="h-5 w-5" />
+                  Registrar venta
                 </>
               )}
             </button>
