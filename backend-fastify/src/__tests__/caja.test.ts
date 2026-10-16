@@ -118,7 +118,7 @@ describe('Caja admin/cajero y anulación de movimientos', () => {
         }],
       },
       { rows: [{ total: '0', n: '0' }] },
-      { rows: [] },
+      { rows: [{ efectivo: '35.50', yape: '64.50' }] },
       { rows: [] },
     )
 
@@ -132,10 +132,14 @@ describe('Caja admin/cajero y anulación de movimientos', () => {
     expect(res.json().cajaAbierta.usuarioId).toBe('1')
     expect(res.json().cajasAbiertas).toHaveLength(1)
     expect(res.json().cajasAbiertas[0].usuarioId).toBe('2')
+    expect(res.json().desglose).toEqual({ Efectivo: 35.5, Yape: 64.5 })
     expect(mockClient.queries[0].sql).toContain('AND c.nusuario_id = $1')
     expect(mockClient.queries[1].sql).toContain('OR $2::BOOLEAN = TRUE')
     expect(mockClient.queries[2].sql).toContain("cestado = 'A'")
     expect(mockClient.queries[3].sql).toContain("cestado = 'A'")
+    expect(mockClient.queries[3].sql).toContain('nmonto_efectivo')
+    expect(mockClient.queries[3].sql).toContain('nmonto_digital')
+    expect(mockClient.queries[3].sql).not.toContain('GROUP BY cmetpago')
   })
 
   it('rechaza apertura de caja si usuario no es admin/super', async () => {

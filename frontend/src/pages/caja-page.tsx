@@ -278,7 +278,8 @@ export function CajaPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-5 text-sm">
-          <p className="text-muted">Desglose de ventas por método</p>
+          <p className="font-medium">Desglose real por medio</p>
+          <p className="mt-1 text-xs text-muted">Pagos mixtos incluidos: efectivo neto y Yape por separado.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {data?.desglose && Object.entries(data.desglose).map(([k, v]) => (
               <Badge key={k} variant="neutral">{k}: S/{v.toFixed(2)}</Badge>

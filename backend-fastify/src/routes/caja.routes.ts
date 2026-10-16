@@ -65,12 +65,29 @@ export default async function cajaRoutes(
          WHERE tcreado::DATE = CURRENT_DATE
            AND cestado = 'A'`,
       ),
-      fastify.db.query<{ cmetpago: string | null; total: string }>(
-        `SELECT cmetpago, COALESCE(SUM(ntotal), 0)::text AS total
+      fastify.db.query<{ efectivo: string; yape: string }>(
+        `SELECT
+           COALESCE(SUM(
+             CASE
+               WHEN COALESCE(nmonto_efectivo, 0) = 0
+                AND COALESCE(nmonto_digital, 0) = 0
+                AND cmetpago = 'Efectivo'
+                 THEN ntotal
+               ELSE GREATEST(COALESCE(nmonto_efectivo, 0) - COALESCE(nvuelto, 0), 0)
+             END
+           ), 0)::TEXT AS efectivo,
+           COALESCE(SUM(
+             CASE
+               WHEN COALESCE(nmonto_efectivo, 0) = 0
+                AND COALESCE(nmonto_digital, 0) = 0
+                AND cmetpago = 'Yape'
+                 THEN ntotal
+               ELSE COALESCE(nmonto_digital, 0)
+             END
+           ), 0)::TEXT AS yape
          FROM bot_ventas
          WHERE tcreado::DATE = CURRENT_DATE
-           AND cestado = 'A'
-         GROUP BY cmetpago`,
+           AND cestado = 'A'`,
       ),
       fastify.db.query<{
         nid: number
@@ -106,9 +123,11 @@ export default async function cajaRoutes(
       ),
     ])
 
-    const desglose = Object.fromEntries(
-      desgloseResult.rows.map((row) => [String(row.cmetpago || '').trim(), Number(row.total || 0)]),
-    )
+    const desgloseRow = desgloseResult.rows[0]
+    const desglose = {
+      Efectivo: Number(desgloseRow?.efectivo || 0),
+      Yape: Number(desgloseRow?.yape || 0),
+    }
 
     return {
       cajaAbierta: cajaAbiertaResult.rows[0] ? mapCajaAbierta(cajaAbiertaResult.rows[0]) : null,
