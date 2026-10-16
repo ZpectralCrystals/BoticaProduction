@@ -917,9 +917,10 @@ export interface ApiPOSProduct {
   receta: string
 }
 
-export function apiPOSBuscarProductos(search: string) {
+export function apiPOSBuscarProductos(search: string, signal?: AbortSignal) {
   return requestV1<{ success: boolean; data: ApiPOSProduct[] }>(
     `/inventario/search?search=${encodeURIComponent(search)}&limit=8`,
+    { signal },
   )
 }
 

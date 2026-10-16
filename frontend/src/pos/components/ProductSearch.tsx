@@ -24,16 +24,19 @@ export function ProductSearch({ onProductSelect }: ProductSearchProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (searchTerm.trim().length < 2) return
+    const normalizedSearch = searchTerm.trim()
+    if (normalizedSearch.length < 2) return
 
     let cancelled = false
+    const controller = new AbortController()
     const timer = window.setTimeout(async () => {
       setIsLoading(true)
       setHasSearched(true)
       try {
-        const res = await apiPOSBuscarProductos(searchTerm)
+        const res = await apiPOSBuscarProductos(normalizedSearch, controller.signal)
         if (!cancelled) setResults(res.success ? res.data : [])
-      } catch {
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return
         if (!cancelled) setResults([])
       } finally {
         if (!cancelled) setIsLoading(false)
@@ -43,6 +46,7 @@ export function ProductSearch({ onProductSelect }: ProductSearchProps) {
     return () => {
       cancelled = true
       window.clearTimeout(timer)
+      controller.abort()
     }
   }, [searchTerm])
 
@@ -85,11 +89,14 @@ export function ProductSearch({ onProductSelect }: ProductSearchProps) {
               setResults([])
               setHasSearched(false)
               setIsLoading(false)
+            } else {
+              setResults([])
+              setHasSearched(false)
             }
           }}
           placeholder="Buscar medicamento… (F2 para enfocar)"
           autoComplete="off"
-          className="w-full h-12 pl-12 pr-4 text-base border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+          className="w-full min-h-12 h-auto py-3 pl-12 pr-4 text-base border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
         />
       </div>
 
@@ -112,7 +119,7 @@ export function ProductSearch({ onProductSelect }: ProductSearchProps) {
                 key={product.id}
                 onClick={() => handleSelect(product)}
                 disabled={sinStock || sinPrecio}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
+                className={`w-full flex flex-col items-stretch gap-3 px-4 py-3 text-left transition-colors sm:flex-row sm:items-center ${
                   sinStock || sinPrecio ? 'opacity-40 cursor-not-allowed' : 'hover:bg-primary/5'
                 }`}
               >
@@ -120,7 +127,7 @@ export function ProductSearch({ onProductSelect }: ProductSearchProps) {
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-medium text-foreground truncate">{product.nombre}</p>
+                    <p className="break-words font-medium text-foreground sm:truncate">{product.nombre}</p>
                     {product.receta === 'S' && (
                       <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded shrink-0">
                         Receta
@@ -130,7 +137,7 @@ export function ProductSearch({ onProductSelect }: ProductSearchProps) {
                   <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                     <span className="text-xs text-muted">{product.codigo}</span>
                     {product.generico && (
-                      <span className="text-xs text-muted truncate max-w-[160px]">{product.generico}</span>
+                      <span className="break-words text-xs text-muted sm:max-w-[10rem] sm:truncate">{product.generico}</span>
                     )}
                     {dias !== null && (
                       <span
@@ -158,7 +165,7 @@ export function ProductSearch({ onProductSelect }: ProductSearchProps) {
                   </div>
                 </div>
 
-                <div className="text-right shrink-0">
+                <div className="flex shrink-0 flex-wrap items-baseline justify-between gap-2 sm:block sm:text-right">
                   <p className="font-semibold text-primary">
                     {precios[0] ? formatCurrency(precios[0].value) : 'Sin precio'}
                   </p>

@@ -39,6 +39,8 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: auto;
+  text-size-adjust: auto;
 }
 
 body {
@@ -102,4 +104,20 @@ a {
 .glass-surface {
   background: var(--surface);
   backdrop-filter: blur(20px);
+}
+
+@media (max-width: 40rem) {
+  #root {
+    overflow-wrap: anywhere;
+  }
+
+  #root :is(button, input, select, textarea) {
+    min-block-size: 2.75rem;
+    line-height: 1.35;
+  }
+
+  #root button {
+    min-inline-size: 2.75rem;
+    white-space: normal;
+  }
 }

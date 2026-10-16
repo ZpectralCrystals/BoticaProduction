@@ -250,7 +250,7 @@ export function PaymentPanel({
             <label className="text-sm font-medium text-foreground mb-3 block">
               Método de pago
             </label>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {METODOS_PAGO.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
@@ -285,7 +285,7 @@ export function PaymentPanel({
                   placeholder="0.00"
                   className="w-full px-4 py-3 border border-border rounded-lg bg-surface text-foreground text-lg font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 />
-                <div className="flex gap-2 mt-2">
+                <div className="flex flex-wrap gap-2 mt-2">
                   {QUICK_AMOUNTS.map((amount) => (
                     <button
                       key={amount}
