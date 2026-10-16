@@ -203,7 +203,7 @@ describe('POST /api/v1/inventario action update', () => {
       { rows: [], rowCount: 1 },
       { rows: [], rowCount: 1 },
       { rows: [], rowCount: 1 },
-      { rows: [], rowCount: 1 },
+      { rows: [{ cnombre: 'Producto actualizado', nstock: 0 }], rowCount: 1 },
       { rows: [], rowCount: 1 },
     )
 
@@ -241,6 +241,72 @@ describe('POST /api/v1/inventario action update', () => {
     expect(sql).toContain('"nstock"')
     expect(sql).toContain('EDITAR_PRODUCTO')
     expect(updateProduct?.params).toContain(false)
+  })
+
+  it('aumenta stock con lote y registra Kárdex y entrada de almacén', async () => {
+    mockClient.responses.push(
+      { rows: [{ nid: 3, cnombre: 'Medicamentos', nfamilia_id: null, familia_nombre: null }] },
+      { rows: [{ nid: 7, ccodigo: 'MED-007', nprecompra: 1, nstock: 10, nstockmin: 1, lrequiere_lote: true }] },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [{ cnombre: 'Producto con lote', nstock: 10 }], rowCount: 1 },
+      { rows: [{ nid: 101, nalmacen_id: 2, ccodigo_lote: 'LOT-1', ncantidad: 10 }], rowCount: 1 },
+    )
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventario',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        action: 'update', id: '7', name: 'Producto con lote', tipoProducto: 'MEDICAMENTO',
+        categoryId: 3, precioCompra: 1, precioVenta1: 2, stock: 15, minStock: 1,
+        requiereLote: true, requiereVencimiento: true,
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const lotUpdate = mockClient.queries.find((query) => query.sql.includes('UPDATE bot_lotes'))
+    expect(lotUpdate?.params).toEqual([15, 101])
+    const kardex = mockClient.queries.find((query) => query.sql.includes('INSERT INTO bot_kardex'))
+    expect(kardex?.params?.slice(0, 7)).toEqual([7, 101, 'LOT-1', 2, 5, 10, 15])
+    const movement = mockClient.queries.find((query) => query.sql.includes('INSERT INTO bot_movimientos_almacen'))
+    expect(movement?.params?.slice(0, 6)).toEqual([7, 101, null, 2, 'AJUSTE_ENTRADA', 5])
+    expect(mockClient.queries.some((query) => query.sql.trim() === 'COMMIT')).toBe(true)
+  })
+
+  it('reduce stock con lote y registra Kárdex y salida de almacén', async () => {
+    mockClient.responses.push(
+      { rows: [{ nid: 3, cnombre: 'Medicamentos', nfamilia_id: null, familia_nombre: null }] },
+      { rows: [{ nid: 7, ccodigo: 'MED-007', nprecompra: 1, nstock: 15, nstockmin: 1, lrequiere_lote: true }] },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [], rowCount: 1 },
+      { rows: [{ cnombre: 'Producto con lote', nstock: 15 }], rowCount: 1 },
+      { rows: [{ nid: 101, nalmacen_id: 2, ccodigo_lote: 'LOT-1', ncantidad: 15 }], rowCount: 1 },
+    )
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventario',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        action: 'update', id: '7', name: 'Producto con lote', tipoProducto: 'MEDICAMENTO',
+        categoryId: 3, precioCompra: 1, precioVenta1: 2, stock: 10, minStock: 1,
+        requiereLote: true, requiereVencimiento: true,
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const lotUpdate = mockClient.queries.find((query) => query.sql.includes('UPDATE bot_lotes'))
+    expect(lotUpdate?.params).toEqual([10, 101])
+    const kardex = mockClient.queries.find((query) => query.sql.includes('INSERT INTO bot_kardex'))
+    expect(kardex?.params?.slice(0, 7)).toEqual([7, 101, 'LOT-1', 2, -5, 15, 10])
+    const movement = mockClient.queries.find((query) => query.sql.includes('INSERT INTO bot_movimientos_almacen'))
+    expect(movement?.params?.slice(0, 6)).toEqual([7, 101, 2, null, 'AJUSTE_SALIDA', 5])
+    expect(mockClient.queries.some((query) => query.sql.trim() === 'COMMIT')).toBe(true)
   })
 })
 

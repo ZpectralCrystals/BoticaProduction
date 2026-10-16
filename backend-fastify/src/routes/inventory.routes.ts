@@ -1,7 +1,177 @@
 import type { FastifyInstance, FastifyPluginOptions } from 'fastify'
+import type { PoolClient } from 'pg'
 import { eq, and, or, asc, count, sql } from 'drizzle-orm'
 import { productos, proveedores } from '../db/schema.js'
 import { normalizeSearchText } from '../lib/text.js'
+
+class StockAdjustmentError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode = 409,
+  ) {
+    super(message)
+  }
+}
+
+async function applyDirectStockTarget(
+  client: PoolClient,
+  input: {
+    productoId: number
+    targetStock: number
+    requiereLote: boolean
+    userId: number | null
+    userName: string | null
+  },
+) {
+  const productResult = await client.query<{
+    cnombre: string
+    nstock: number
+  }>(
+    `SELECT cnombre, nstock
+     FROM bot_productos
+     WHERE nid = $1 AND cestado = 'A'
+     FOR UPDATE`,
+    [input.productoId],
+  )
+  const product = productResult.rows[0]
+  if (!product) throw new StockAdjustmentError('PRODUCTO NO ENCONTRADO', 404)
+
+  const stockAnterior = Number(product.nstock || 0)
+  const diferencia = input.targetStock - stockAnterior
+  if (diferencia === 0) return
+
+  const detalle = `Edición manual de stock: ${stockAnterior} → ${input.targetStock}`
+
+  if (!input.requiereLote) {
+    await client.query(
+      'UPDATE bot_productos SET nstock = $1, tmodifi = NOW() WHERE nid = $2',
+      [input.targetStock, input.productoId],
+    )
+    await client.query(
+      `INSERT INTO bot_kardex
+         (nproducto_id, ctipo, cref_tabla, nref_id, ncantidad,
+          nstock_anterior, nstock_nuevo, cdetalle, nusuario_id, cusuario)
+       VALUES ($1, 'AJUSTE', 'bot_productos', $1, $2, $3, $4, $5, $6, $7)`,
+      [
+        input.productoId,
+        diferencia,
+        stockAnterior,
+        input.targetStock,
+        detalle,
+        input.userId,
+        input.userName,
+      ],
+    )
+  } else {
+    const lotResult = await client.query<{
+      nid: number
+      nalmacen_id: number | null
+      ccodigo_lote: string | null
+      ncantidad: number
+    }>(
+      `SELECT nid, nalmacen_id, ccodigo_lote, ncantidad
+       FROM bot_lotes
+       WHERE nproducto_id = $1
+         AND cestado IN ('ACTIVO', 'AGOTADO')
+         AND (dfechavencimiento IS NULL OR dfechavencimiento >= CURRENT_DATE)
+       ORDER BY CASE WHEN cestado = 'ACTIVO' THEN 0 ELSE 1 END,
+                dfechavencimiento ASC, tcreado ASC
+       FOR UPDATE`,
+      [input.productoId],
+    )
+    const lots = lotResult.rows
+    if (lots.length === 0) {
+      throw new StockAdjustmentError(
+        'Producto requiere lote. Registre un lote vigente antes de editar su stock.',
+      )
+    }
+
+    if (diferencia < 0) {
+      const available = lots.reduce((sum, lot) => sum + Number(lot.ncantidad || 0), 0)
+      if (available < Math.abs(diferencia)) {
+        throw new StockAdjustmentError('STOCK INSUFICIENTE EN LOTES')
+      }
+    }
+
+    const changes: Array<{
+      lot: (typeof lots)[number]
+      quantity: number
+    }> = []
+    if (diferencia > 0) {
+      changes.push({ lot: lots[0], quantity: diferencia })
+    } else {
+      let pending = Math.abs(diferencia)
+      for (const lot of lots) {
+        if (pending <= 0) break
+        const quantity = Math.min(Number(lot.ncantidad || 0), pending)
+        if (quantity > 0) changes.push({ lot, quantity: -quantity })
+        pending -= quantity
+      }
+    }
+
+    let runningStock = stockAnterior
+    for (const change of changes) {
+      const newLotQuantity = Number(change.lot.ncantidad || 0) + change.quantity
+      const previousStock = runningStock
+      runningStock += change.quantity
+
+      await client.query(
+        `UPDATE bot_lotes
+         SET ncantidad = $1,
+             cestado = CASE WHEN $1 = 0 THEN 'AGOTADO' ELSE 'ACTIVO' END,
+             tmodifi = NOW()
+         WHERE nid = $2`,
+        [newLotQuantity, change.lot.nid],
+      )
+      await client.query(
+        `INSERT INTO bot_kardex
+           (nproducto_id, nlote_id, ccodigo_lote, nalmacen_id, ctipo,
+            cref_tabla, nref_id, ncantidad, nstock_anterior, nstock_nuevo,
+            cdetalle, nusuario_id, cusuario)
+         VALUES ($1, $2, $3, $4, 'AJUSTE', 'bot_productos', $1, $5, $6, $7, $8, $9, $10)`,
+        [
+          input.productoId,
+          change.lot.nid,
+          change.lot.ccodigo_lote,
+          change.lot.nalmacen_id,
+          change.quantity,
+          previousStock,
+          runningStock,
+          detalle,
+          input.userId,
+          input.userName,
+        ],
+      )
+
+      if (change.lot.nalmacen_id) {
+        await client.query(
+          `INSERT INTO bot_movimientos_almacen
+             (nproducto_id, nlote_id, nalmacen_origen_id, nalmacen_destino_id,
+              ctipo_movimiento, ncantidad, cdetalle, nusuario_id, cusuario)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            input.productoId,
+            change.lot.nid,
+            change.quantity < 0 ? change.lot.nalmacen_id : null,
+            change.quantity > 0 ? change.lot.nalmacen_id : null,
+            change.quantity > 0 ? 'AJUSTE_ENTRADA' : 'AJUSTE_SALIDA',
+            Math.abs(change.quantity),
+            detalle,
+            input.userId,
+            input.userName,
+          ],
+        )
+      }
+    }
+  }
+
+  await client.query(
+    `INSERT INTO bot_auditoria
+       (nusuario_id, cusuario, caccion, ctabla, nregistro_id, cdetalle)
+     VALUES ($1, $2, 'AJUSTE_INVENTARIO', 'bot_productos', $3, $4)`,
+    [input.userId, input.userName, input.productoId, detalle],
+  )
+}
 
 function parseOptionalPrice(value: unknown) {
   if (value === undefined || value === null || value === '') return null
@@ -1345,11 +1515,10 @@ export default async function inventoryRoutes(
         nprecompra: number
         nstock: number
         nstockmin: number
-        stock_lotes: number
+        lrequiere_lote: boolean
       }>(
         `SELECT p.nid, p.ccodigo, p.nprecompra, p.nstock, p.nstockmin,
-                COALESCE((SELECT SUM(l.ncantidad) FROM bot_lotes l
-                          WHERE l.nproducto_id = p.nid AND l.cestado = 'ACTIVO'), 0)::INT AS stock_lotes
+                COALESCE(p.lrequiere_lote, TRUE) AS lrequiere_lote
          FROM bot_productos p
          WHERE p.nid = $1 AND p.cestado = 'A'`,
         [id],
@@ -1363,12 +1532,6 @@ export default async function inventoryRoutes(
       const stock = Object.prototype.hasOwnProperty.call(body, 'stock') ? payload.stock : Number(current.nstock)
       const minStock = Object.prototype.hasOwnProperty.call(body, 'minStock') ? payload.minStock : Number(current.nstockmin)
       const stockChanged = stock !== Number(current.nstock)
-      if (stockChanged && payload.requiereLote && stock !== Number(current.stock_lotes)) {
-        return reply.code(409).send({
-          error: 'STOCK CONTROLADO POR LOTES',
-          message: 'El stock de productos con lote debe ajustarse desde inventario avanzado para conservar kardex y trazabilidad.',
-        })
-      }
 
       // DRIZZLE: actualizar producto por ID
       await fastify.drizzle
@@ -1387,7 +1550,7 @@ export default async function inventoryRoutes(
           npreventa: String(payload.precioVenta1),
           npreventa2: payload.precioVenta2 === null ? null : String(payload.precioVenta2),
           npreventa3: payload.precioVenta3 === null ? null : String(payload.precioVenta3),
-          nstock: stock,
+          nstock: stockChanged ? Number(current.nstock) : stock,
           nstockmin: minStock,
           cubicacion: payload.location || null,
           nproveedorId: payload.supplierId,
@@ -1404,6 +1567,36 @@ export default async function inventoryRoutes(
         await replaceProductComponents(fastify, id, componentSelection)
       }
       await syncProductPrices(fastify, id, productPrices, request.authUser)
+
+      if (stockChanged) {
+        const stockClient = await fastify.db.connect()
+        try {
+          await stockClient.query('BEGIN')
+          await applyDirectStockTarget(stockClient, {
+            productoId: id,
+            targetStock: stock,
+            requiereLote: payload.requiereLote,
+            userId: request.authUser?.id ?? null,
+            userName: request.authUser?.nombre ?? null,
+          })
+          await stockClient.query('COMMIT')
+        } catch (error) {
+          await stockClient.query('ROLLBACK')
+          request.log.error({ error }, 'Error ajustando stock desde edición de producto')
+          if (error instanceof StockAdjustmentError) {
+            return reply.code(error.statusCode).send({
+              error: 'AJUSTE_STOCK_INVALIDO',
+              message: error.message,
+            })
+          }
+          return reply.code(500).send({
+            error: 'AJUSTE_STOCK_ERROR',
+            message: 'No se pudo registrar el ajuste de stock y Kárdex.',
+          })
+        } finally {
+          stockClient.release()
+        }
+      }
 
       await fastify.db.query(
         `INSERT INTO bot_auditoria (nusuario_id, cusuario, caccion, ctabla, nregistro_id, cdetalle)
