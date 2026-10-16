@@ -266,6 +266,7 @@ export function AppShell() {
     return window.localStorage.getItem('botica-sidebar-collapsed') === 'true'
   })
   const { pathname } = useLocation()
+  const isSalesPage = pathname === '/panel/ventas'
   const currentPage = pageMeta[pathname] ?? pageMeta['/panel']
   const currentDate = new Intl.DateTimeFormat('es-PE', {
     weekday: 'long',
@@ -281,7 +282,12 @@ export function AppShell() {
   }
 
   return (
-    <div className="min-h-screen w-full max-w-none px-3 py-3 sm:px-4 lg:h-screen lg:overflow-hidden lg:px-0 lg:py-0">
+    <div
+      className={cn(
+        'w-full max-w-none px-3 py-3 sm:px-4 lg:h-screen lg:overflow-hidden lg:px-0 lg:py-0',
+        isSalesPage ? 'h-dvh overflow-hidden' : 'min-h-screen',
+      )}
+    >
       {mobileOpen ? (
         <div
           className="fixed inset-0 z-40 bg-black/25 backdrop-blur-sm lg:hidden"
@@ -289,7 +295,7 @@ export function AppShell() {
         />
       ) : null}
 
-      <div className="flex w-full max-w-none min-w-0 gap-4 lg:h-full lg:gap-0">
+      <div className={cn('flex w-full max-w-none min-w-0 gap-4 lg:h-full lg:gap-0', isSalesPage && 'h-full')}>
         <aside
           className={cn(
             'hidden h-screen shrink-0 border-r border-border bg-white p-3 transition-[width] duration-300 lg:block',
@@ -316,9 +322,14 @@ export function AppShell() {
           <SidebarContent onNavigate={() => setMobileOpen(false)} />
         </aside>
 
-        <main className="min-w-0 flex-1 lg:h-screen lg:overflow-y-auto">
-          <header className="sticky top-0 z-30 border-b border-border bg-white px-4 py-4 shadow-sm sm:px-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <main
+          className={cn(
+            'min-w-0 flex-1 lg:h-screen lg:overflow-y-auto',
+            isSalesPage && 'flex h-full min-h-0 flex-col overflow-hidden lg:block',
+          )}
+        >
+          <header className={cn('sticky top-0 z-30 border-b border-border bg-white px-4 py-4 shadow-sm sm:px-6', isSalesPage && 'shrink-0 py-3 sm:py-4')}>
+            <div className={cn('flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between', isSalesPage && 'flex-row items-center gap-2')}>
               <div className="flex items-start gap-3">
                 <Button
                   className="lg:hidden"
@@ -332,11 +343,13 @@ export function AppShell() {
                   <p className="text-lg font-semibold text-foreground">
                     {currentPage.title}
                   </p>
-                  <p className="text-sm text-muted">{currentPage.detail}</p>
+                  <p className={cn('text-sm text-muted', isSalesPage && 'hidden sm:block')}>
+                    {currentPage.detail}
+                  </p>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className={cn('flex flex-col gap-3 sm:flex-row sm:items-center', isSalesPage && 'hidden sm:flex')}>
                 <div className="rounded-lg border border-border bg-white px-4 py-2 text-sm text-muted">
                   {currentDate}
                 </div>
@@ -345,7 +358,12 @@ export function AppShell() {
             </div>
           </header>
 
-          <section className="w-full min-w-0 p-4 sm:p-6">
+          <section
+            className={cn(
+              'w-full min-w-0 p-4 sm:p-6',
+              isSalesPage && 'min-h-0 flex-1 overflow-y-auto lg:overflow-visible',
+            )}
+          >
             <Outlet />
           </section>
         </main>
