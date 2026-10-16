@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyPluginOptions } from 'fastify'
-import { eq, and, or, ilike, asc, count } from 'drizzle-orm'
+import { eq, and, or, asc, count, sql } from 'drizzle-orm'
 import { productos, proveedores } from '../db/schema.js'
+import { normalizeSearchText } from '../lib/text.js'
 
 function parseOptionalPrice(value: unknown) {
   if (value === undefined || value === null || value === '') return null
@@ -1662,7 +1663,7 @@ export default async function inventoryRoutes(
   // DRIZZLE: migrado completamente — SELECT simple con ilike + limit
   fastify.get('/search', { preHandler: fastify.requireAuth }, async (request, reply) => {
     const query = request.query as { search?: string; limit?: string }
-    const searchTerm = String(query.search || '').trim()
+    const searchTerm = normalizeSearchText(query.search)
     const limit = Math.max(1, Math.min(Number(query.limit || 10), 100))
 
     try {
@@ -1671,9 +1672,9 @@ export default async function inventoryRoutes(
         ? and(
             baseCondition,
             or(
-              ilike(productos.cnombre, `%${searchTerm}%`),
-              ilike(productos.ccodigo, `%${searchTerm}%`),
-              ilike(productos.cgenerico, `%${searchTerm}%`),
+              sql`translate(lower(coalesce(${productos.cnombre}, '')), 'áéíóúüñ', 'aeiouun') LIKE ${`%${searchTerm}%`}`,
+              sql`translate(lower(coalesce(${productos.ccodigo}, '')), 'áéíóúüñ', 'aeiouun') LIKE ${`%${searchTerm}%`}`,
+              sql`translate(lower(coalesce(${productos.cgenerico}, '')), 'áéíóúüñ', 'aeiouun') LIKE ${`%${searchTerm}%`}`,
             ),
           )
         : baseCondition
